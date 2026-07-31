@@ -82,6 +82,8 @@ const ja: MessageTree = {
     connClosed: "接続が閉じました",
     exited: "終了しました",
     loadingModels: "モデル読込中 (sherpa-onnx)…",
+    aiProcessing: "AI が転写を処理中…",
+    listeningLive: "聴取中…",
     recordSaved: "録音を保存: {file}",
     recordSaveFail: "録音の保存に失敗: {err}",
     recordStart: "録音開始: {path}",

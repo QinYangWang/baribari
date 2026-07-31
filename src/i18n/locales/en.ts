@@ -82,6 +82,8 @@ const en: MessageTree = {
     connClosed: "Connection closed",
     exited: "Exited",
     loadingModels: "Loading models (sherpa-onnx)…",
+    aiProcessing: "AI enhancing transcript…",
+    listeningLive: "Listening…",
     recordSaved: "Recording saved: {file}",
     recordSaveFail: "Failed to save recording: {err}",
     recordStart: "Recording: {path}",

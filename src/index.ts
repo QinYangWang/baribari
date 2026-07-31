@@ -381,6 +381,7 @@ function createSegmentPipeline(
   args: TranscribeArgs,
   emitUi: (seg: Segment) => void,
   onStatus: (msg: string) => void,
+  onAiBusy?: (busy: boolean) => void,
 ): {
   onAsr: (seg: Segment) => void;
   close: () => void;
@@ -391,9 +392,12 @@ function createSegmentPipeline(
   let shareStarting = false;
 
   const deliver = (seg: Segment) => {
-    seg.wallIso = seg.wall.toISOString();
+    // Don't broadcast provisional AI-pending rows to LAN peers
+    if (!seg.pending) {
+      seg.wallIso = seg.wall.toISOString();
+    }
     emitUi(seg);
-    if (share) {
+    if (share && !seg.pending) {
       try {
         share.broadcast(seg);
       } catch {
@@ -406,6 +410,7 @@ function createSegmentPipeline(
     () => args.ai,
     deliver,
     (msg) => onStatus(`AI: ${msg}`),
+    onAiBusy,
   );
 
   const onAsr = (seg: Segment) => {
@@ -535,7 +540,12 @@ async function runTui(args: TranscribeArgs, stop: { value: boolean }) {
   process.on("SIGINT", () => requestStop(false));
   process.on("SIGTERM", () => requestStop(true));
 
-  pipe = createSegmentPipeline(args, (seg) => tui.emit(seg), onStatus);
+  pipe = createSegmentPipeline(
+    args,
+    (seg) => tui.emit(seg),
+    onStatus,
+    (busy) => tui.setAiBusy?.(busy),
+  );
   await pipe.ensureShare();
   if (aiActive(args.ai)) {
     onStatus(t("status.aiOnModel", { model: args.ai.model }));

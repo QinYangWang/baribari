@@ -82,6 +82,8 @@ const zh: MessageTree = {
     connClosed: "连接已关闭",
     exited: "已退出",
     loadingModels: "加载模型 (sherpa-onnx)…",
+    aiProcessing: "AI 正在增强转写…",
+    listeningLive: "监听中…",
     recordSaved: "已保存录音: {file}",
     recordSaveFail: "录音保存失败: {err}",
     recordStart: "开始录音: {path}",

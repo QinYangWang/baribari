@@ -41,17 +41,23 @@ function systemPrompt(cfg: AiConfig): string {
   const parts: string[] = [
     "You post-process real-time speech recognition (ASR) output from meetings.",
     "Return ONLY valid JSON, no markdown fences.",
+    "Never put translated text into the corrected field.",
+    "corrected and translation must be different fields with different roles.",
   ];
   if (cfg.correct) {
     parts.push(
-      'Field "corrected": fix ASR errors (homophones, punctuation, casing). Keep meaning and speaker intent. Keep original language. Do not invent content.',
+      'Field "corrected": fix ASR errors (homophones, punctuation, casing). Keep the SAME language as the input. Keep meaning and speaker intent. Do not invent content. Do not translate.',
     );
+  } else {
+    parts.push('Field "corrected": always return an empty string.');
   }
   if (cfg.translateTo) {
     const name = LANG_NAME[cfg.translateTo] || cfg.translateTo;
     parts.push(
-      `Field "translation": translate the corrected (or original) text into ${name}.`,
+      `Field "translation": translate the meaning into ${name} only. Do not copy ASR text unless the source is already ${name}.`,
     );
+  } else {
+    parts.push('Field "translation": always return an empty string.');
   }
   parts.push(
     'Schema: {"corrected":"string","translation":"string"}. Use empty string for unused fields.',
@@ -94,16 +100,34 @@ async function chatJson(
     choices?: Array<{ message?: { content?: string } }>;
   };
   const content = data.choices?.[0]?.message?.content ?? "{}";
-  try {
-    return JSON.parse(content) as {
-      corrected?: string;
-      translation?: string;
-    };
-  } catch {
-    // model returned plain text — treat as correction only
-    const t = content.trim();
-    return { corrected: t, translation: "" };
-  }
+  const parsed = parseModelJson(content);
+  if (parsed) return parsed;
+  // Non-JSON: do not guess — avoid treating translation as correction
+  return { corrected: "", translation: "" };
+}
+
+function parseModelJson(
+  content: string,
+): { corrected?: string; translation?: string } | null {
+  const raw = content.trim();
+  if (!raw) return null;
+  const tryParse = (s: string) => {
+    try {
+      return JSON.parse(s) as { corrected?: string; translation?: string };
+    } catch {
+      return null;
+    }
+  };
+  let obj = tryParse(raw);
+  if (obj) return obj;
+  // strip markdown fences
+  const fenced = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+  obj = tryParse(fenced);
+  if (obj) return obj;
+  // extract first {...}
+  const m = raw.match(/\{[\s\S]*\}/);
+  if (m) obj = tryParse(m[0]);
+  return obj;
 }
 
 /**
@@ -135,12 +159,7 @@ export async function enhanceSegment(
       ],
       signal,
     );
-    if (cfg.correct && out.corrected?.trim()) {
-      seg.corrected = out.corrected.trim();
-    }
-    if (cfg.translateTo && out.translation?.trim()) {
-      seg.translation = out.translation.trim();
-    }
+    applyAiOutput(seg, cfg, raw, out);
   } catch (e) {
     // leave raw text; caller may surface status
     throw e;
@@ -148,56 +167,127 @@ export async function enhanceSegment(
   return seg;
 }
 
+/** Apply model output with guards so translation never overwrites source text. */
+function applyAiOutput(
+  seg: Segment,
+  cfg: AiConfig,
+  raw: string,
+  out: { corrected?: string; translation?: string },
+): void {
+  let corr = (out.corrected || "").trim();
+  let tr = (out.translation || "").trim();
+
+  // Translate-only: model sometimes fills corrected instead of translation
+  if (cfg.translateTo && !tr && corr && corr !== raw && !cfg.correct) {
+    tr = corr;
+    corr = "";
+  }
+
+  // corrected must stay source-language; if it equals translation, drop it
+  if (corr && tr && corr === tr && corr !== raw) {
+    corr = "";
+  }
+
+  // identical to raw is useless noise
+  if (corr && corr === raw) corr = "";
+
+  if (cfg.correct && corr) {
+    seg.corrected = corr;
+  } else {
+    delete seg.corrected;
+  }
+
+  if (cfg.translateTo && tr) {
+    // skip if translation is just a copy of source when target differs (best-effort)
+    seg.translation = tr;
+  } else {
+    delete seg.translation;
+  }
+}
+
 /** Async queue: process segments serially without blocking capture. */
 export function createAiPipeline(
   getCfg: () => AiConfig,
   onEnhanced: (seg: Segment) => void,
   onError?: (msg: string) => void,
+  onBusy?: (busy: boolean) => void,
 ): {
   push: (seg: Segment) => void;
   close: () => void;
 } {
   const q: Segment[] = [];
-  let busy = false;
+  let pumping = false;
   let closed = false;
   let abort: AbortController | null = null;
+  let seq = 0;
+  let pendingCount = 0;
+
+  const notifyBusy = () => {
+    onBusy?.(pendingCount > 0 || pumping);
+  };
 
   const pump = async () => {
-    if (busy || closed) return;
-    busy = true;
+    if (pumping || closed) return;
+    pumping = true;
+    notifyBusy();
     while (q.length && !closed) {
       const seg = q.shift()!;
       const cfg = getCfg();
       if (!aiActive(cfg)) {
+        seg.pending = false;
+        pendingCount = Math.max(0, pendingCount - 1);
         onEnhanced(seg);
+        notifyBusy();
         continue;
       }
       abort = new AbortController();
       try {
         await enhanceSegment(seg, cfg, abort.signal);
+        seg.pending = false;
+        pendingCount = Math.max(0, pendingCount - 1);
         if (!closed) onEnhanced(seg);
       } catch (e) {
         if (!closed) {
           onError?.(e instanceof Error ? e.message : String(e));
+          seg.pending = false;
+          pendingCount = Math.max(0, pendingCount - 1);
           onEnhanced(seg); // still show raw
         }
       }
       abort = null;
+      notifyBusy();
     }
-    busy = false;
+    pumping = false;
+    notifyBusy();
   };
 
   return {
     push(seg) {
       if (closed) return;
+      if (!seg.id) seg.id = `seg_${Date.now()}_${++seq}`;
       // bound queue
-      if (q.length > 40) q.splice(0, q.length - 30);
+      if (q.length > 40) {
+        const dropped = q.splice(0, q.length - 30);
+        pendingCount = Math.max(0, pendingCount - dropped.length);
+      }
+
+      const cfg = getCfg();
+      if (aiActive(cfg)) {
+        // Immediate provisional row so UI can show loading
+        seg.pending = true;
+        pendingCount += 1;
+        onEnhanced({ ...seg, pending: true });
+        notifyBusy();
+      }
       q.push(seg);
       void pump();
     },
     close() {
       closed = true;
       q.length = 0;
+      pendingCount = 0;
+      pumping = false;
+      notifyBusy();
       try {
         abort?.abort();
       } catch {

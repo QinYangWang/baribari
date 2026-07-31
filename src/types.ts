@@ -116,18 +116,22 @@ export interface TranscribeArgs {
 }
 
 export interface Segment {
+  /** Stable id for UI updates (ASR → AI enhance). */
+  id?: string;
   start: number;
   end: number;
   wall: Date;
   spk: number | null;
-  /** Raw ASR text. */
+  /** Raw ASR text (never replaced by translation). */
   text: string;
-  /** AI-corrected text (optional). */
+  /** AI-corrected text in the same language as ASR (optional). */
   corrected?: string;
   /** AI translation (optional). */
   translation?: string;
   /** ISO wall time for JSON wire format. */
   wallIso?: string;
+  /** True while AI enhancement is still running. */
+  pending?: boolean;
 }
 
 export type EmitFn = (seg: Segment) => void;
@@ -169,8 +173,18 @@ export const VAD_FIELD_HELP: Record<
   windowSize: { label: "VAD frame", help: "Analysis frame size @16kHz", unit: "smp" },
 };
 
+/**
+ * Text shown as the primary (source-language) line.
+ * Never falls back to translation — that is a separate field.
+ */
 export function displayText(seg: Segment): string {
-  return (seg.corrected || seg.text || "").trim();
+  const raw = (seg.text || "").trim();
+  const corr = (seg.corrected || "").trim();
+  const tr = (seg.translation || "").trim();
+  if (!corr) return raw;
+  // Model sometimes puts the translation into "corrected"
+  if (tr && corr === tr && corr !== raw) return raw;
+  return corr;
 }
 
 export function vadFingerprint(v: VadConfig): string {

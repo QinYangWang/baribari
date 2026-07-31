@@ -84,6 +84,8 @@ export type MessageTree = {
     connClosed: string;
     exited: string;
     loadingModels: string;
+    aiProcessing: string;
+    listeningLive: string;
     recordSaved: string;
     recordSaveFail: string;
     recordStart: string;

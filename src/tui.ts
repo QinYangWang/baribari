@@ -124,6 +124,8 @@ interface TranscriptSegment {
   translatedText?: string;
   isFinal: boolean;
   isActive: boolean;
+  /** AI still running on this segment. */
+  pending?: boolean;
   wall: Date;
 }
 
@@ -131,6 +133,8 @@ export interface TuiHandle {
   emit: (seg: Segment) => void;
   setStatus: (msg: string) => void;
   setDevice: (name: string) => void;
+  /** AI pipeline busy — shows loading in message bar. */
+  setAiBusy?: (busy: boolean) => void;
   close: () => void;
   waitClosed: () => Promise<void>;
 }
@@ -638,6 +642,7 @@ export function createTui(
   let dirty = true;
   let closed = false;
   let pulse = 0;
+  let aiBusy = false;
   const startedAt = Date.now();
   let recordStartedAt: number | null = null;
 
@@ -1129,19 +1134,40 @@ export function createTui(
     }
   }
 
+  function effectiveStatus(): string {
+    if (aiBusy) return t("status.aiProcessing");
+    return status;
+  }
+
   function isIdleStatus(msg: string): boolean {
     const st = msg.trim();
     if (!st) return true;
+    if (aiBusy) return false;
     if (st === t("status.listening") || st === t("tui.listening")) return true;
+    if (st === t("status.listeningLive")) return true;
     if (st === t("status.starting")) return true;
     return false;
   }
 
   function statusSeverity(msg: string): "ok" | "warn" | "err" | "info" {
     const lower = msg.toLowerCase();
-    if (/失败|错误|error|缺|无key|退出|fail|invalid|无效/.test(lower)) return "err";
-    if (/暂无|警告|warn|重连|切换|暂停|pause|…|请/.test(lower)) return "warn";
-    if (/已开|成功|共享已|开始|保存|监听设备|ai 已|✓|on ·|saved|enabled/.test(lower)) {
+    if (
+      /fail|error|invalid|missing|缺|失败|错误|無効|失敗|不足/i.test(lower)
+    ) {
+      return "err";
+    }
+    if (
+      /warn|pause|silent|no speaker|reconnect|请|暂无|警告|暂停|無音|再接続/i.test(
+        lower,
+      )
+    ) {
+      return "warn";
+    }
+    if (
+      /saved|enabled|connected|joined|✓|已开|成功|保存|接続|完了|ready/i.test(
+        lower,
+      )
+    ) {
       return "ok";
     }
     return "info";
@@ -1150,20 +1176,46 @@ export function createTui(
   function renderMessageBar(buf: Cell[][], layout: Layout): void {
     const r = layout.messageBar;
     if (!r) return;
-    const st = status.trim();
+    const st = effectiveStatus().trim();
     if (!st || isIdleStatus(st)) return;
 
-    const sev = statusSeverity(st);
-    const borderFg =
-      sev === "err" ? C.err : sev === "warn" ? C.warn : sev === "ok" ? C.ok : C.panelBorder;
-    const icon = sev === "err" ? "!" : sev === "warn" ? "…" : sev === "ok" ? "✓" : "·";
-    const textFg =
-      sev === "err" ? C.err : sev === "warn" ? C.warn : sev === "ok" ? C.ok : C.title;
+    const sev = aiBusy ? "info" : statusSeverity(st);
+    const borderFg = aiBusy
+      ? C.accent
+      : sev === "err"
+        ? C.err
+        : sev === "warn"
+          ? C.warn
+          : sev === "ok"
+            ? C.ok
+            : C.panelBorder;
+    const spin = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    const icon = aiBusy
+      ? spin[pulse % spin.length]!
+      : sev === "err"
+        ? "!"
+        : sev === "warn"
+          ? "…"
+          : sev === "ok"
+            ? "✓"
+            : "·";
+    const textFg = aiBusy
+      ? C.accent
+      : sev === "err"
+        ? C.err
+        : sev === "warn"
+          ? C.warn
+          : sev === "ok"
+            ? C.ok
+            : C.title;
 
     drawBox(buf, r, undefined, borderFg);
     const innerW = Math.max(1, r.w - 4);
     const line = truncateDisplay(`${icon} ${st}`, innerW);
-    putText(buf, r.x + 2, r.y + 1, line, { fg: textFg, bold: sev !== "info" });
+    putText(buf, r.x + 2, r.y + 1, line, {
+      fg: textFg,
+      bold: sev !== "info" || aiBusy,
+    });
   }
 
   function renderSpeakerList(buf: Cell[][], layout: Layout): void {
@@ -1267,16 +1319,29 @@ export function createTui(
   ): { text: string; style: Partial<Cell> }[] {
     const lines: { text: string; style: Partial<Cell> }[] = [];
     const sp = seg.speakerId ? speakers.get(seg.speakerId) : undefined;
-    const name = sp?.displayName || t("common.unknownSpeaker");
+    // Pending / unknown speaker while AI or diarization still settling
+    const name =
+      !seg.speakerId || seg.pending
+        ? t("common.unknownSpeaker")
+        : sp?.displayName || t("common.unknownSpeaker");
     const color = sp?.color || C.muted;
-    const time = fmtRange(seg.startedAtMs, seg.endedAtMs);
-    const head = `● ${name}  ${time}`;
+    const hot = seg.isActive || !!seg.pending;
+    const spin = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    const dot = seg.pending
+      ? spin[pulse % spin.length]!
+      : hot
+        ? "●"
+        : "○";
+    const time = seg.pending
+      ? `${fmtDur(seg.startedAtMs)}–…`
+      : fmtRange(seg.startedAtMs, seg.endedAtMs);
+    const head = `${dot} ${name}  ${time}`;
     lines.push({
       text: head,
       style: {
-        fg: seg.isActive ? color : color,
+        fg: hot ? color : color,
         bold: true,
-        dim: !seg.isActive && seg.isFinal,
+        dim: !hot && seg.isFinal,
       },
     });
 
@@ -1287,17 +1352,23 @@ export function createTui(
       lines.push({
         text: " ".repeat(indent) + wl,
         style: {
-          fg: seg.isActive ? C.title : C.muted,
-          dim: !seg.isActive,
+          fg: hot ? C.title : C.muted,
+          dim: !hot,
         },
       });
     }
-    if (seg.translatedText) {
+    if (seg.pending && !seg.translatedText) {
+      const dots = ".".repeat((pulse % 3) + 1);
+      lines.push({
+        text: " ".repeat(indent) + `${t("status.aiProcessing").replace(/…$/, "")}${dots}`,
+        style: { fg: C.accent, dim: true },
+      });
+    } else if (seg.translatedText) {
       const tw = wrapDisplay(seg.translatedText, textW);
       for (const wl of tw) {
         lines.push({
           text: " ".repeat(indent) + wl,
-          style: { fg: C.translate, dim: true },
+          style: { fg: C.translate, dim: !hot },
         });
       }
     }
@@ -1721,7 +1792,7 @@ export function createTui(
     if (closed) return;
     const W = cols();
     const H = rows();
-    const showMsg = !isIdleStatus(status);
+    const showMsg = !isIdleStatus(effectiveStatus());
     const layout = computeLayout(W, H, showMsg);
 
     if (layout.mode === "tiny") {
@@ -2557,55 +2628,99 @@ export function createTui(
 
   const raf = setInterval(() => {
     pulse += 1;
-    // clear isActive after a while for older segments
+    // clear isActive after a while for older final segments
     if (pulse % 4 === 0) {
       const last = segments[segments.length - 1];
-      if (last && last.isActive && Date.now() - last.wall.getTime() > 4000) {
+      if (
+        last &&
+        last.isActive &&
+        !last.pending &&
+        Date.now() - last.wall.getTime() > 4000
+      ) {
         last.isActive = false;
         markActiveSpeaker(null);
         dirty = true;
       }
     }
-    if (dirty || pulse % 2 === 0) paint();
-  }, 500);
+    // animate spinner while AI busy or pending segments
+    const needAnim =
+      aiBusy || segments.some((s) => s.pending) || dirty || pulse % 2 === 0;
+    if (needAnim) paint();
+  }, 120);
 
   paint();
 
   const handle: TuiHandle = {
     emit(seg: Segment) {
       const main = displayText(seg);
+      const rawAsr = (seg.text || "").trim();
+      // Prefer stable id from pipeline for ASR→AI update
+      const id = seg.id || `seg_${++segSeq}`;
+      const existing = segments.find((s) => s.id === id);
       const sid = ensureSpeaker(seg.spk);
-      if (sid) {
-        const sp = speakers.get(sid)!;
-        sp.segmentCount += 1;
-      }
-      // deactivate previous
-      for (const s of segments) s.isActive = false;
-      markActiveSpeaker(sid);
 
-      const ts: TranscriptSegment = {
-        id: `seg_${++segSeq}`,
-        speakerId: sid,
-        startedAtMs: seg.start,
-        endedAtMs: seg.end,
-        originalText: main,
-        translatedText: seg.translation,
-        isFinal: true,
-        isActive: true,
-        wall: seg.wall,
-      };
-      segments.push(ts);
-      if (segments.length > 500) segments.splice(0, segments.length - 400);
+      if (existing) {
+        // Update in place (e.g. AI finished)
+        const wasPending = existing.pending;
+        existing.originalText = main || rawAsr || existing.originalText;
+        // Never copy translation into originalText
+        if (seg.translation?.trim()) {
+          const tr = seg.translation.trim();
+          if (tr !== existing.originalText) existing.translatedText = tr;
+        }
+        existing.pending = !!seg.pending;
+        existing.isFinal = !seg.pending;
+        existing.isActive = true;
+        if (sid && existing.speakerId !== sid) {
+          existing.speakerId = sid;
+        }
+        if (sid) markActiveSpeaker(sid);
+        // count speaker once when first finalized
+        if (wasPending && !seg.pending && sid) {
+          const sp = speakers.get(sid);
+          if (sp) sp.segmentCount += 1;
+        }
+        for (const s of segments) {
+          if (s.id !== id) s.isActive = false;
+        }
+      } else {
+        if (sid && !seg.pending) {
+          const sp = speakers.get(sid)!;
+          sp.segmentCount += 1;
+        }
+        for (const s of segments) s.isActive = false;
+        if (sid && !seg.pending) markActiveSpeaker(sid);
+        else markActiveSpeaker(null);
+
+        const ts: TranscriptSegment = {
+          id,
+          speakerId: sid,
+          startedAtMs: seg.start,
+          endedAtMs: seg.pending ? undefined : seg.end,
+          originalText: main || rawAsr,
+          translatedText:
+            seg.translation &&
+            seg.translation.trim() !== (main || rawAsr)
+              ? seg.translation.trim()
+              : undefined,
+          isFinal: !seg.pending,
+          isActive: true,
+          pending: !!seg.pending,
+          wall: seg.wall,
+        };
+        segments.push(ts);
+        if (segments.length > 500) segments.splice(0, segments.length - 400);
+      }
       dirty = true;
 
-      if (out) {
+      if (out && !seg.pending) {
         const spkLabel =
           sid && speakers.get(sid)
             ? speakers.get(sid)!.displayName
             : seg.spk != null
               ? t("plain.speaker", { n: seg.spk })
               : t("common.dash");
-        let line = `[${fmtClock(seg.wall)} ${fmtRange(seg.start, seg.end)}] ${spkLabel}  ${main}`;
+        let line = `[${fmtClock(seg.wall)} ${fmtRange(seg.start, seg.end)}] ${spkLabel}  ${main || rawAsr}`;
         if (seg.translation) line += ` | ${seg.translation}`;
         if (seg.corrected && seg.corrected !== seg.text) {
           line += `  (ASR: ${seg.text})`;
@@ -2621,6 +2736,11 @@ export function createTui(
     },
     setDevice(name: string) {
       deviceName = name;
+      dirty = true;
+      paint();
+    },
+    setAiBusy(busy: boolean) {
+      aiBusy = busy;
       dirty = true;
       paint();
     },
