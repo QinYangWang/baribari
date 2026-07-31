@@ -191,7 +191,10 @@ function openLoopbackStream(
   let tail: Buffer = Buffer.alloc(0);
   let stderr = "";
   let gotData = false;
+  let gotAudible = false;
   let alive = true;
+  let silentWarned = false;
+  const startedAt = Date.now();
 
   child.stderr?.on("data", (d: Buffer) => {
     const s = d.toString();
@@ -223,9 +226,17 @@ function openLoopbackStream(
     let f32 = i16BufToF32(buf);
     f32 = toMono(f32, nativeCh);
     // gentle boost: loopback often quieter than mic
+    let peak = 0;
     for (let i = 0; i < f32.length; i++) {
       let v = f32[i]! * 1.4;
       f32[i] = v > 1 ? 1 : v < -1 ? -1 : v;
+      const a = Math.abs(f32[i]!);
+      if (a > peak) peak = a;
+    }
+    // Any real signal clears "silent" soft-warn state
+    if (peak > 0.008) {
+      gotAudible = true;
+      silentWarned = false;
     }
     if (resampler) f32 = resampler.resample(f32);
     if (f32.length) onMono16k(f32);
@@ -242,18 +253,33 @@ function openLoopbackStream(
     }
   });
 
-  // soft hint only — keep short for TUI status strip
+  // Soft hint only once, and only if we never got PCM at all for a long while.
+  // Do NOT warn merely because recent frames are quiet (music/pauses are normal).
   const watchdog = setTimeout(() => {
-    if (!gotData && alive) {
+    if (!alive || silentWarned) return;
+    if (!gotData) {
+      silentWarned = true;
       onError?.(t("status.loopbackSilent"));
     }
-  }, 2500);
+  }, 8000);
+
+  // One soft warn if PCM flows but is pure digital silence for a long time
+  // (device open but nothing playing). Never re-spam once cleared by audio.
+  const silencePoll = setInterval(() => {
+    if (!alive || silentWarned) return;
+    if (Date.now() - startedAt < 12000) return;
+    if (gotData && !gotAudible) {
+      silentWarned = true;
+      onError?.(t("status.loopbackSilent"));
+    }
+  }, 4000);
 
   return {
     label: t("status.labelLoopback"),
     close: () => {
       alive = false;
       clearTimeout(watchdog);
+      clearInterval(silencePoll);
       try {
         child.stdout?.removeAllListeners();
         child.stderr?.removeAllListeners();

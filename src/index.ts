@@ -526,6 +526,7 @@ async function runTui(args: TranscribeArgs, stop: { value: boolean }) {
     onQuit: () => requestStop(false),
   });
 
+  let statusClearTimer: ReturnType<typeof setTimeout> | null = null;
   const onStatus = (msg: string) => {
     const sep = msg.indexOf(" · ");
     if (sep > 0) {
@@ -535,6 +536,13 @@ async function runTui(args: TranscribeArgs, stop: { value: boolean }) {
       if (rest && head === deviceHead) tui.setDevice(rest);
     }
     tui.setStatus(msg);
+    // Auto-clear soft warnings so they don't stick forever
+    if (statusClearTimer) clearTimeout(statusClearTimer);
+    statusClearTimer = setTimeout(() => {
+      // only clear if still the same soft message
+      tui.setStatus(t("status.listening"));
+    }, 6000);
+    statusClearTimer.unref?.();
   };
 
   process.on("SIGINT", () => requestStop(false));

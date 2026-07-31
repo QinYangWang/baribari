@@ -643,6 +643,10 @@ export function createTui(
   let closed = false;
   let pulse = 0;
   let aiBusy = false;
+  /** Earliest time we may clear aiBusy (keep spinner visible briefly). */
+  let aiBusyHoldUntil = 0;
+  const AI_BUSY_MIN_MS = 700;
+  const pendingHold = new Map<string, number>(); // seg id → show spinner until
   const startedAt = Date.now();
   let recordStartedAt: number | null = null;
 
@@ -1319,12 +1323,11 @@ export function createTui(
   ): { text: string; style: Partial<Cell> }[] {
     const lines: { text: string; style: Partial<Cell> }[] = [];
     const sp = seg.speakerId ? speakers.get(seg.speakerId) : undefined;
-    // Pending / unknown speaker while AI or diarization still settling
-    const name =
-      !seg.speakerId || seg.pending
-        ? t("common.unknownSpeaker")
-        : sp?.displayName || t("common.unknownSpeaker");
-    const color = sp?.color || C.muted;
+    // Show unknown speaker only while still pending AND no speaker id yet
+    const name = seg.speakerId
+      ? sp?.displayName || t("common.speakerN", { n: seg.speakerId.replace(/\D/g, "") || "?" })
+      : t("common.unknownSpeaker");
+    const color = sp?.color || (seg.pending ? C.accent : C.muted);
     const hot = seg.isActive || !!seg.pending;
     const spin = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
     const dot = seg.pending
@@ -1332,14 +1335,16 @@ export function createTui(
       : hot
         ? "●"
         : "○";
-    const time = seg.pending
-      ? `${fmtDur(seg.startedAtMs)}–…`
-      : fmtRange(seg.startedAtMs, seg.endedAtMs);
+    // Prefer real end; open-ended only when end unknown
+    const time =
+      seg.endedAtMs != null && Number.isFinite(seg.endedAtMs)
+        ? fmtRange(seg.startedAtMs, seg.endedAtMs)
+        : `${fmtDur(seg.startedAtMs)}–…`;
     const head = `${dot} ${name}  ${time}`;
     lines.push({
       text: head,
       style: {
-        fg: hot ? color : color,
+        fg: color,
         bold: true,
         dim: !hot && seg.isFinal,
       },
@@ -1357,13 +1362,16 @@ export function createTui(
         },
       });
     }
-    if (seg.pending && !seg.translatedText) {
+    // Loading line under body while AI runs (keep visible even with short AI latency)
+    if (seg.pending) {
       const dots = ".".repeat((pulse % 3) + 1);
+      const label = t("status.aiProcessing").replace(/…$/, "").replace(/\.\.\.$/, "");
       lines.push({
-        text: " ".repeat(indent) + `${t("status.aiProcessing").replace(/…$/, "")}${dots}`,
-        style: { fg: C.accent, dim: true },
+        text: " ".repeat(indent) + `${label}${dots}`,
+        style: { fg: C.accent, dim: false },
       });
-    } else if (seg.translatedText) {
+    }
+    if (seg.translatedText) {
       const tw = wrapDisplay(seg.translatedText, textW);
       for (const wl of tw) {
         lines.push({
@@ -1423,7 +1431,7 @@ export function createTui(
     for (const seg of segs) {
       const ls = segmentVisualLines(seg, innerW);
       for (const l of ls) {
-        visual.push({ ...l, active: seg.isActive });
+        visual.push({ ...l, active: seg.isActive || !!seg.pending });
       }
     }
 
@@ -2661,25 +2669,60 @@ export function createTui(
 
       if (existing) {
         // Update in place (e.g. AI finished)
-        const wasPending = existing.pending;
+        const wasPending = !!existing.pending;
         existing.originalText = main || rawAsr || existing.originalText;
         // Never copy translation into originalText
         if (seg.translation?.trim()) {
           const tr = seg.translation.trim();
           if (tr !== existing.originalText) existing.translatedText = tr;
         }
-        existing.pending = !!seg.pending;
-        existing.isFinal = !seg.pending;
+        // Always stamp end time when we have it (including AI finalize)
+        if (seg.end != null && Number.isFinite(seg.end)) {
+          existing.endedAtMs = seg.end;
+        }
+        if (sid) {
+          if (existing.speakerId !== sid) existing.speakerId = sid;
+          markActiveSpeaker(sid);
+        }
+        // Hold pending spinner for a minimum duration so it is visible
+        if (seg.pending) {
+          existing.pending = true;
+          existing.isFinal = false;
+          if (!pendingHold.has(id)) {
+            pendingHold.set(id, Date.now() + AI_BUSY_MIN_MS);
+          }
+        } else if (wasPending) {
+          const holdUntil = pendingHold.get(id) ?? 0;
+          const wait = Math.max(0, holdUntil - Date.now());
+          const finish = () => {
+            const row = segments.find((s) => s.id === id);
+            if (!row) return;
+            row.pending = false;
+            row.isFinal = true;
+            pendingHold.delete(id);
+            dirty = true;
+            paint();
+          };
+          if (wait > 0) {
+            // keep spinner; apply final text now, clear pending later
+            existing.pending = true;
+            existing.isFinal = false;
+            setTimeout(finish, wait);
+          } else {
+            existing.pending = false;
+            existing.isFinal = true;
+            pendingHold.delete(id);
+          }
+          // count speaker once when first finalized
+          if (sid) {
+            const sp = speakers.get(sid);
+            if (sp) sp.segmentCount += 1;
+          }
+        } else {
+          existing.pending = false;
+          existing.isFinal = true;
+        }
         existing.isActive = true;
-        if (sid && existing.speakerId !== sid) {
-          existing.speakerId = sid;
-        }
-        if (sid) markActiveSpeaker(sid);
-        // count speaker once when first finalized
-        if (wasPending && !seg.pending && sid) {
-          const sp = speakers.get(sid);
-          if (sp) sp.segmentCount += 1;
-        }
         for (const s of segments) {
           if (s.id !== id) s.isActive = false;
         }
@@ -2689,14 +2732,20 @@ export function createTui(
           sp.segmentCount += 1;
         }
         for (const s of segments) s.isActive = false;
-        if (sid && !seg.pending) markActiveSpeaker(sid);
+        if (sid) markActiveSpeaker(sid);
         else markActiveSpeaker(null);
+
+        if (seg.pending) {
+          pendingHold.set(id, Date.now() + AI_BUSY_MIN_MS);
+        }
 
         const ts: TranscriptSegment = {
           id,
           speakerId: sid,
           startedAtMs: seg.start,
-          endedAtMs: seg.pending ? undefined : seg.end,
+          // Keep end even while pending so time never sticks on "–…" after done
+          endedAtMs:
+            seg.end != null && Number.isFinite(seg.end) ? seg.end : undefined,
           originalText: main || rawAsr,
           translatedText:
             seg.translation &&
@@ -2740,9 +2789,28 @@ export function createTui(
       paint();
     },
     setAiBusy(busy: boolean) {
-      aiBusy = busy;
-      dirty = true;
-      paint();
+      if (busy) {
+        aiBusy = true;
+        aiBusyHoldUntil = Date.now() + AI_BUSY_MIN_MS;
+        dirty = true;
+        paint();
+        return;
+      }
+      // Keep footer loading visible briefly so it doesn't flash
+      const wait = Math.max(0, aiBusyHoldUntil - Date.now());
+      if (wait > 0) {
+        setTimeout(() => {
+          if (Date.now() >= aiBusyHoldUntil) {
+            aiBusy = false;
+            dirty = true;
+            paint();
+          }
+        }, wait + 10);
+      } else {
+        aiBusy = false;
+        dirty = true;
+        paint();
+      }
     },
     close() {
       if (closed) return;
