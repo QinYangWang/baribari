@@ -22,12 +22,13 @@ npm i -g baribari && baribari
 
 ## なぜ baribari？
 
-| | |
-|---|---|
+| 機能 | 内容 |
+|------|------|
 | **会議向け TUI** | 話者 · リアルタイム転写 · デバイス/録音/共有 |
 | **ローカル ASR** | SenseVoice + Silero VAD（クラウド不要で認識可） |
 | **話者ラベル** | 声紋 + 複数窓投票 |
 | **任意の AI** | OpenAI 互換の校正・翻訳 |
+| **セッション** | 自動保存；`resume` でタイムライン再生（録音があれば同期） |
 | **LAN 共有** | ホストが配信、ブラウザ/CLI で参加 |
 | **ユーザー設定** | `~/.config/baribari` |
 
@@ -76,11 +77,25 @@ baribari setup [options]         モデル確認/DL
 baribari paths | config          パス表示
 baribari devices                 マイク一覧
 baribari doctor                  診断
-baribari demo                    ダミー TUI
+baribari session list            保存セッション一覧
+baribari session rm <id>         セッション削除
+baribari resume [id]             再生（既定: demo）
+baribari demo                    resume demo と同じ
 baribari join <url>              LAN 共有に参加
 baribari completion [shell]      bash | zsh | fish | powershell
 baribari -h | -V                 ヘルプ / バージョン
 ```
+
+### セッション
+
+会議は自動保存: `~/.config/baribari/sessions/<id>/`（字幕；`r` で録音すると `audio.wav`）。
+
+```bash
+baribari session list
+baribari resume demo
+```
+
+**再生キー（ライブと別）:** `←→` シーク · `Space` 再生 · `q` 終了。
 
 | 主なオプション | 説明 |
 |-----------------|------|

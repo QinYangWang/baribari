@@ -1976,12 +1976,16 @@ export function createTui(
       args.record = undefined;
       status = t("status.stopRecord");
     } else {
-      const stamp = new Date()
-        .toISOString()
-        .replace(/[:.]/g, "-")
-        .slice(0, 19);
       const dir = (args.recordDir || defaultRecordDir()).replace(/[/\\]+$/, "");
-      args.record = `${dir}/meeting-${stamp}`;
+      // Session dirs use fixed audio.wav; otherwise timestamped file
+      const isSessionDir =
+        /[/\\]sessions[/\\]/.test(dir) || /ses_[a-z0-9]+/i.test(dir);
+      args.record = isSessionDir
+        ? `${dir}/audio`
+        : `${dir}/meeting-${new Date()
+            .toISOString()
+            .replace(/[:.]/g, "-")
+            .slice(0, 19)}`;
       status = t("status.startRecord", { path: args.record });
     }
   }

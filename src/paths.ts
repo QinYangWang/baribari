@@ -48,6 +48,7 @@ export function ensureConfigDir(): string {
   fs.mkdirSync(dir, { recursive: true });
   fs.mkdirSync(path.join(dir, "models"), { recursive: true });
   fs.mkdirSync(path.join(dir, "recordings"), { recursive: true });
+  fs.mkdirSync(path.join(dir, "sessions"), { recursive: true });
   return dir;
 }
 

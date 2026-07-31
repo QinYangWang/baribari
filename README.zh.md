@@ -22,12 +22,13 @@ npm i -g baribari && baribari
 
 ## 为什么用 baribari？
 
-| | |
-|---|---|
+| 能力 | 说明 |
+|------|------|
 | **会议向 TUI** | 说话人 · 实时转写 · 设备/录音/共享 |
 | **本地识别** | SenseVoice + Silero VAD（转写可不依赖云） |
 | **说话人** | 声纹 + 多窗投票，抢话更稳 |
 | **可选 AI** | OpenAI 兼容纠错与翻译 |
+| **会话** | 自动保存字幕；`resume` 时间轴回放（有录音可同步播） |
 | **局域网共享** | 主机广播，浏览器或 CLI 加入 |
 | **用户目录配置** | `~/.config/baribari` |
 
@@ -83,11 +84,26 @@ baribari setup [选项]          检查 / 下载模型
 baribari paths | config        打印配置与模型路径
 baribari devices               列出麦克风
 baribari doctor                诊断
-baribari demo                  假数据 TUI
+baribari session list          列出已保存会议
+baribari session rm <id>       删除会话
+baribari resume [id]           回放会话（默认 demo）
+baribari demo                  等同 resume demo
 baribari join <url>            加入局域网共享
 baribari completion [shell]    bash | zsh | fish | powershell
 baribari -h | -V               帮助 / 版本
 ```
+
+### 会话
+
+每次开会自动保存到 `~/.config/baribari/sessions/<id>/`（字幕 JSONL；按 `r` 录音则写入 `audio.wav`）。
+
+```bash
+baribari session list
+baribari resume demo
+baribari resume ses_xxxx
+```
+
+**回放快捷键（与实时会议不同）：** `←→` 寻道 · `Space` 播放 · `q` 退出。
 
 ### 常用参数
 

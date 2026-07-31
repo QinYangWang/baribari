@@ -22,12 +22,13 @@ npm i -g baribari && baribari
 
 ## Why baribari?
 
-| | |
-|---|---|
+| Feature | What you get |
+|---------|----------------|
 | **Meeting-first TUI** | Speakers · live transcript · device/record/share status |
 | **Local ASR** | SenseVoice + Silero VAD via sherpa-onnx (no cloud required for speech) |
 | **Speaker labels** | Embedding-based ID with multi-window voting |
 | **Optional AI** | OpenAI-compatible correct + translate |
+| **Sessions** | Auto-saved transcripts; `resume` timeline replay (+ audio if recorded) |
 | **LAN share** | One host broadcasts; others join in the browser or CLI |
 | **Your machine** | Config & models under `~/.config/baribari` |
 
@@ -97,7 +98,10 @@ baribari setup [options]           Check / download models
 baribari paths | config            Print config & model paths
 baribari devices                   List microphones
 baribari doctor                    Diagnose environment
-baribari demo                      Fake TUI data (no models)
+baribari session list              List saved meetings
+baribari session rm <id>           Delete a session
+baribari resume [id]               Replay a session (default: demo)
+baribari demo                      Same as: resume demo
 baribari join <url>                Join LAN share (receive only)
 baribari completion [shell]        bash | zsh | fish | powershell
 baribari -h | -V                   Help / version
@@ -162,7 +166,47 @@ baribari --ai --ai-base-url https://api.openai.com/v1 --ai-translate en
 baribari --share --share-port 8788
 baribari join http://192.168.1.10:8787/
 baribari --vad-min-silence 0.35 --spk-threshold 0.60
+baribari resume demo
+baribari session list
+baribari resume ses_xxxx
 ```
+
+---
+
+## Sessions
+
+Every live meeting is saved automatically:
+
+```text
+~/.config/baribari/sessions/<session-id>/
+  meta.json           # id, name, duration, counts
+  transcript.jsonl    # segments (text + translation)
+  speakers.json
+  audio.wav           # only if you enable recording (r)
+```
+
+```bash
+baribari session list              # or: baribari sessions
+baribari session rm ses_m5abc_x1   # delete by id / prefix
+baribari session path ses_m5abc    # print directory
+baribari resume demo               # built-in sample meeting
+baribari resume ses_m5abc          # replay a real session
+```
+
+### Resume mode (read-only)
+
+Different keys from a live meeting:
+
+| Key | Action |
+|-----|--------|
+| `←` `→` | Seek −2s / +2s |
+| `,` `.` | Seek −5s / +5s |
+| `PgUp` `PgDn` | Seek −10s / +10s |
+| `Space` | Play / pause (needs `ffplay` if audio exists) |
+| `g` / `G` | Jump to start / end |
+| `q` | Quit |
+
+Timeline scrubbing shows captions for the current time. If the session has `audio.wav` and `ffplay` is installed, audio seeks with the playhead.
 
 ---
 
@@ -193,7 +237,8 @@ Default directory (override with `BARIBARI_CONFIG_DIR`):
 ~/.config/baribari/
 ├── config.json      # persisted settings
 ├── models/          # VAD / ASR / speaker models
-└── recordings/      # default WAV output
+├── sessions/        # auto-saved meetings (transcript ± audio)
+└── recordings/      # legacy / fallback WAV dir
 ```
 
 CLI flags always override `config.json`. UI language is stored as `uiLang` and chosen on first run if missing.

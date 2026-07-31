@@ -56,6 +56,16 @@ import {
   UI_LANGS,
   uiLangLabel,
 } from "./i18n/index.js";
+import {
+  createSessionWriter,
+  deleteSession,
+  DEMO_SESSION_ID,
+  formatSessionRow,
+  listSessions,
+  loadSession,
+  type SessionSpeaker,
+} from "./session.js";
+import { runResumeTui } from "./resume-tui.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json") as { name: string; version: string };
@@ -102,6 +112,36 @@ function printDevices(): void {
   if (process.platform === "win32") {
     console.log("\n" + t("cli.sourceHint"));
   }
+}
+
+function printSessionList(): void {
+  const list = listSessions();
+  if (!list.length) {
+    console.log("No sessions yet. Run a meeting with: baribari");
+    return;
+  }
+  console.log(
+    `${"ID".padEnd(20)}  ${"UPDATED".padEnd(18)}  ${"SEGS".padStart(4)}      ${"DUR".padStart(8)}  ${"MEDIA".padEnd(5)}  NAME`,
+  );
+  console.log("─".repeat(88));
+  for (const m of list) {
+    console.log(formatSessionRow(m));
+  }
+  console.log("");
+  console.log("Resume:  baribari resume <id>");
+  console.log("Delete:  baribari session rm <id>");
+  console.log("Demo:    baribari resume demo");
+}
+
+async function runResume(id: string): Promise<void> {
+  const data = loadSession(id);
+  if (!data) {
+    console.error(`Session not found: ${id}`);
+    console.error("List sessions: baribari session list");
+    hardExit(1);
+  }
+  await runResumeTui(data);
+  hardExit(0);
 }
 
 function printDoctor(): void {
@@ -180,7 +220,7 @@ function printCompletion(shell: string): void {
 # Add to ~/.bashrc:  eval "$(${name} completion bash)"
 _${name}_completions() {
   local cur="\${COMP_WORDS[COMP_CWORD]}"
-  local cmds="setup paths config devices doctor demo join completion help"
+  local cmds="setup paths config devices doctor demo join session sessions resume completion help"
   local opts="--lang --ui-lang --source --device --output --no-spk --spk-threshold --no-tui --record --record-dir --ai --no-ai --ai-translate --ai-base-url --ai-model --ai-key --share --no-share --share-port --join --vad-threshold --vad-min-speech --vad-min-silence --vad-max-speech --vad-window --list-devices --demo --help --version"
   if [[ \${COMP_CWORD} -eq 1 ]]; then
     COMPREPLY=( $(compgen -W "\${cmds} \${opts}" -- "\${cur}") )
@@ -196,7 +236,7 @@ complete -F _${name}_completions ${name}
 #compdef ${name}
 _${name}() {
   local -a cmds opts
-  cmds=(setup paths config devices doctor demo join completion help)
+  cmds=(setup paths config devices doctor demo join session sessions resume completion help)
   opts=(--lang --ui-lang --source --device --output --no-spk --spk-threshold --no-tui --record --record-dir --ai --no-ai --ai-translate --ai-base-url --ai-model --ai-key --share --no-share --share-port --join --vad-threshold --vad-min-speech --vad-min-silence --vad-max-speech --vad-window --list-devices --demo --help --version)
   _arguments \\
     '1:command:(\${cmds})' \\
@@ -217,6 +257,8 @@ complete -c ${name} -n "__fish_use_subcommand" -a "devices" -d "List audio devic
 complete -c ${name} -n "__fish_use_subcommand" -a "doctor" -d "Health check"
 complete -c ${name} -n "__fish_use_subcommand" -a "demo" -d "Demo TUI"
 complete -c ${name} -n "__fish_use_subcommand" -a "join" -d "Join LAN share"
+complete -c ${name} -n "__fish_use_subcommand" -a "session" -d "List/delete sessions"
+complete -c ${name} -n "__fish_use_subcommand" -a "resume" -d "Replay a session"
 complete -c ${name} -n "__fish_use_subcommand" -a "completion" -d "Shell completion"
 complete -c ${name} -l lang -d "ASR language"
 complete -c ${name} -l ui-lang -d "UI language"
@@ -229,7 +271,7 @@ complete -c ${name} -l version -d "Version"
 # Add to $PROFILE:  ${name} completion powershell | Out-String | Invoke-Expression
 Register-ArgumentCompleter -Native -CommandName ${name} -ScriptBlock {
   param(\$wordToComplete, \$commandAst, \$cursorPosition)
-  \$cmds = @('setup','paths','config','devices','doctor','demo','join','completion','help')
+  \$cmds = @('setup','paths','config','devices','doctor','demo','join','session','resume','completion','help')
   \$opts = @('--lang','--ui-lang','--source','--device','--output','--ai','--share','--join','--help','--version')
   (\$cmds + \$opts) | Where-Object { \$_ -like "\$wordToComplete*" } | ForEach-Object {
     [System.Management.Automation.CompletionResult]::new(\$_, \$_, 'ParameterValue', \$_)
@@ -299,6 +341,10 @@ async function main() {
     argv[0] === "paths" ||
     argv[0] === "config" ||
     argv[0] === "devices" ||
+    argv[0] === "session" ||
+    argv[0] === "sessions" ||
+    argv[0] === "resume" ||
+    argv[0] === "demo" ||
     argv[0] === "help";
 
   // Resolve UI language early (except pure meta commands)
@@ -332,6 +378,9 @@ Examples:
   $ baribari --ai --ai-translate en   AI enhance + translate to English
   $ baribari --share                  Broadcast transcript on LAN
   $ baribari join http://host:8787    Join a shared session
+  $ baribari session list             List saved meetings
+  $ baribari resume demo              Replay built-in demo session
+  $ baribari resume ses_xxx           Replay a saved session
   $ baribari devices                  List microphones
   $ baribari doctor                   Health check
   $ baribari completion bash          Shell completions
@@ -398,9 +447,9 @@ Environment:
 
   program
     .command("demo")
-    .description("Run TUI with fake transcript data (no models)")
+    .description("Open the built-in demo session (same as: resume demo)")
     .action(async () => {
-      await runDemo();
+      await runResume(DEMO_SESSION_ID);
     });
 
   program
@@ -414,6 +463,67 @@ Environment:
         noTui: opts.tui === false || !process.stdout.isTTY,
         output: opts.output,
       });
+    });
+
+  const sessionCmd = program
+    .command("session")
+    .alias("sessions")
+    .description("List or delete saved meeting sessions");
+
+  sessionCmd
+    .command("list")
+    .alias("ls")
+    .description("List sessions (default)")
+    .action(() => {
+      printSessionList();
+      hardExit(0);
+    });
+
+  sessionCmd
+    .command("rm")
+    .alias("delete")
+    .description("Delete a session by id (not demo)")
+    .argument("<id>", "Session id or prefix")
+    .action((id: string) => {
+      if (id === "demo" || id === DEMO_SESSION_ID) {
+        console.error("Cannot delete the built-in demo session");
+        hardExit(1);
+      }
+      const ok = deleteSession(id);
+      if (!ok) {
+        console.error(`Session not found: ${id}`);
+        hardExit(1);
+      }
+      console.log(`Deleted ${id}`);
+      hardExit(0);
+    });
+
+  sessionCmd
+    .command("path")
+    .description("Print session directory")
+    .argument("<id>", "Session id")
+    .action((id: string) => {
+      const s = loadSession(id);
+      if (!s) {
+        console.error(`Session not found: ${id}`);
+        hardExit(1);
+      }
+      console.log(s.meta.path);
+      hardExit(0);
+    });
+
+  // bare `session` → list
+  sessionCmd.action(() => {
+    printSessionList();
+    hardExit(0);
+  });
+
+  program
+    .command("resume")
+    .description("Replay a saved session (read-only timeline)")
+    .argument("[id]", "Session id / prefix / 'demo'", "demo")
+    .action(async (id: string) => {
+      await runResume(id || "demo");
     });
 
   program
@@ -463,7 +573,7 @@ async function runMain(opts: RunOpts) {
   const recDefault = defaultRecordDir();
 
   if (opts.demo) {
-    await runDemo();
+    await runResume(DEMO_SESSION_ID);
     return;
   }
 
@@ -726,11 +836,33 @@ async function runTui(args: TranscribeArgs, stop: { value: boolean }) {
   let forceTimer: ReturnType<typeof setTimeout> | null = null;
   let pipe: ReturnType<typeof createSegmentPipeline> | null = null;
 
+  // Auto-create session; optional recording goes into session dir
+  const session = createSessionWriter({
+    source: args.source,
+    lang: args.lang,
+  });
+  // Default record path when user toggles r without --record
+  if (!args.record) {
+    // expose session audio path via recordDir convention: user presses r → use session path
+    args.recordDir = session.dir;
+  } else if (args.record && !args.record.includes(session.id)) {
+    // keep explicit --record path; also copy target into session if relative
+  }
+  // Prefer storing WAV as session/audio.wav when recording is enabled at start
+  if (args.record) {
+    args.record = session.recordPath.replace(/\.wav$/i, "");
+  }
+
   const requestStop = (hard = false) => {
     if (hard || stop.value) {
       if (forceTimer) clearTimeout(forceTimer);
       try {
         pipe?.close();
+      } catch {
+        /* ignore */
+      }
+      try {
+        session.close();
       } catch {
         /* ignore */
       }
@@ -750,6 +882,11 @@ async function runTui(args: TranscribeArgs, stop: { value: boolean }) {
         /* ignore */
       }
       try {
+        session.close();
+      } catch {
+        /* ignore */
+      }
+      try {
         tui.close();
       } catch {
         /* ignore */
@@ -761,6 +898,21 @@ async function runTui(args: TranscribeArgs, stop: { value: boolean }) {
   const tui = createTui(args, {
     onQuit: () => requestStop(false),
   });
+  tui.setStatus(`Session ${session.id}`);
+
+  // When user toggles record on without a path, bind to session audio
+  const origRecord = args.record;
+  const recordWatch = setInterval(() => {
+    if (args.record && args.record.includes("meeting-")) {
+      // rewrite live toggle paths into session audio.wav
+      const want = session.recordPath.replace(/\.wav$/i, "");
+      if (args.record !== want) args.record = want;
+    }
+    if (!args.record && origRecord === undefined) {
+      /* idle */
+    }
+  }, 300);
+  recordWatch.unref?.();
 
   let statusClearTimer: ReturnType<typeof setTimeout> | null = null;
   const onStatus = (msg: string) => {
@@ -772,11 +924,9 @@ async function runTui(args: TranscribeArgs, stop: { value: boolean }) {
       if (rest && head === deviceHead) tui.setDevice(rest);
     }
     tui.setStatus(msg);
-    // Auto-clear soft warnings so they don't stick forever
     if (statusClearTimer) clearTimeout(statusClearTimer);
     statusClearTimer = setTimeout(() => {
-      // only clear if still the same soft message
-      tui.setStatus(t("status.listening"));
+      tui.setStatus(`Session ${session.id}`);
     }, 6000);
     statusClearTimer.unref?.();
   };
@@ -784,9 +934,25 @@ async function runTui(args: TranscribeArgs, stop: { value: boolean }) {
   process.on("SIGINT", () => requestStop(false));
   process.on("SIGTERM", () => requestStop(true));
 
+  const speakersFromSeg = (seg: Segment): SessionSpeaker[] | undefined => {
+    if (seg.spk == null) return undefined;
+    return [
+      {
+        id: `spk_${seg.spk}`,
+        displayName: `Speaker ${seg.spk}`,
+        spk: seg.spk,
+      },
+    ];
+  };
+
   pipe = createSegmentPipeline(
     args,
-    (seg) => tui.emit(seg),
+    (seg) => {
+      tui.emit(seg);
+      if (!seg.pending) {
+        session.onSegment(seg, speakersFromSeg(seg));
+      }
+    },
     onStatus,
     (busy) => tui.setAiBusy?.(busy),
   );
@@ -804,9 +970,18 @@ async function runTui(args: TranscribeArgs, stop: { value: boolean }) {
     exitCode = 1;
     console.error(e instanceof Error ? e.message : e);
   }
+  clearInterval(recordWatch);
   if (forceTimer) clearTimeout(forceTimer);
   try {
     pipe.close();
+  } catch {
+    /* ignore */
+  }
+  try {
+    const meta = session.close();
+    if (meta && exitCode === 0) {
+      // print after TUI closes
+    }
   } catch {
     /* ignore */
   }
@@ -817,6 +992,13 @@ async function runTui(args: TranscribeArgs, stop: { value: boolean }) {
   }
   try {
     tui.close();
+  } catch {
+    /* ignore */
+  }
+  try {
+    console.log(
+      `Session saved: ${session.id}\n  ${session.dir}\n  Resume: baribari resume ${session.id}`,
+    );
   } catch {
     /* ignore */
   }
@@ -969,88 +1151,6 @@ async function runJoin(
   await new Promise<void>(() => {
     /* until SIGINT */
   });
-}
-
-async function runDemo() {
-  if (!process.stdout.isTTY) {
-    console.error(t("cli.demoNeedTty"));
-    process.exit(1);
-  }
-  const ui = loadSettings().uiLang ?? detectUiLang();
-  setUiLang(ui);
-  const args: TranscribeArgs = {
-    lang: "zh",
-    uiLang: ui,
-    source: "mic",
-    noSpk: false,
-    spkThreshold: 0.55,
-    noTui: false,
-    recordDir: defaultRecordDir(),
-    paused: { value: false },
-    ai: { ...DEFAULT_AI },
-    share: { ...DEFAULT_SHARE },
-    vad: { ...DEFAULT_VAD },
-  };
-  const stop = { value: false };
-  const tui = createTui(args, {
-    onQuit: () => {
-      stop.value = true;
-      tui.close();
-    },
-  });
-  tui.setDevice("Demo Mic");
-  tui.setStatus(t("status.demoMode"));
-
-  const samples: Array<{
-    spk: number | null;
-    text: string;
-    translation?: string;
-    dur: number;
-  }> = [
-    { spk: 1, text: "大家好，我们开始今天的产品评审。", translation: "Hello everyone, let's start today's product review.", dur: 2.4 },
-    { spk: 2, text: "好的，我先同步一下上周的进度：登录流程已经上线。", dur: 3.1 },
-    { spk: 1, text: "不错。语音转写这块呢？延迟有压下来吗？", dur: 2.2 },
-    { spk: 3, text: "端到端大概 400ms，VAD 切段还在调阈值。", dur: 2.8 },
-    {
-      spk: 2,
-      text: "阈值我建议先 0.55，误切太多会影响说话人聚类。",
-      translation: "I suggest starting with 0.55 for the threshold.",
-      dur: 3.0,
-    },
-  ];
-
-  let audioT = 0;
-  let i = 0;
-  const timer = setInterval(() => {
-    if (stop.value) {
-      clearInterval(timer);
-      return;
-    }
-    if (args.paused.value) return;
-    const s = samples[i % samples.length]!;
-    i += 1;
-    const start = audioT;
-    audioT += s.dur + 0.4;
-    tui.emit({
-      start,
-      end: start + s.dur,
-      wall: new Date(),
-      spk: s.spk,
-      text: s.text,
-      translation: s.translation,
-    });
-    tui.setStatus(t("status.demoPushed", { n: i }));
-  }, 1600);
-
-  process.on("SIGINT", () => {
-    stop.value = true;
-    clearInterval(timer);
-    tui.close();
-  });
-
-  await tui.waitClosed();
-  clearInterval(timer);
-  hardExit(0);
 }
 
 main().catch((e) => {
