@@ -222,6 +222,7 @@ export async function transcribe(
       !args.noSpk &&
       audio.length >= Math.floor(0.5 * SAMPLE_RATE)
     ) {
+      // Multi-window voting inside tracker; null → leave unknown
       spk = tracker.assign(audio);
     }
 
