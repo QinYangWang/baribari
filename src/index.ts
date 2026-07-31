@@ -7,7 +7,10 @@
  * First run: setup guide / optional download.
  */
 
+import { createRequire } from "node:module";
 import { Command } from "commander";
+import fs from "node:fs";
+import path from "node:path";
 import {
   defaultSource,
   listInputDevices,
@@ -24,13 +27,19 @@ import {
   mergeAi,
   mergeShare,
   mergeVad,
+  modelOverridesFromSettings,
   normalizeRecordDir,
   snapshotFromArgs,
 } from "./settings.js";
-import { aiActive, createAiPipeline } from "./ai.js";
+import { aiActive, createAiPipeline, resolveApiKey } from "./ai.js";
 import { startShareServer, type ShareServer } from "./share-server.js";
 import { joinShareSession } from "./share-client.js";
-import { configDir, ensureConfigDir } from "./paths.js";
+import {
+  checkModels,
+  configDir,
+  ensureConfigDir,
+  packageRoot,
+} from "./paths.js";
 import {
   ensureReadyForAsr,
   ensureUiLang,
@@ -39,12 +48,17 @@ import {
 } from "./setup.js";
 import {
   detectUiLang,
+  getUiLang,
   isUiLang,
   resolveUiLang,
   setUiLang,
   t,
   UI_LANGS,
+  uiLangLabel,
 } from "./i18n/index.js";
+
+const require = createRequire(import.meta.url);
+const pkg = require("../package.json") as { name: string; version: string };
 
 const LANGS: Lang[] = ["auto", "zh", "en", "ja", "ko", "yue"];
 const SOURCES: AudioSource[] = ["mic", "loopback", "both"];
@@ -75,146 +89,378 @@ function readUiLangFlag(argv: string[] = process.argv): string | undefined {
   return argv[flagIdx + 1];
 }
 
-/** Subcommands that do not need models. */
-async function runUtilityCommands(argv: string[]): Promise<boolean> {
-  const cmd = argv[0];
-  if (cmd === "setup") {
-    const rest = argv.slice(1);
-    const download = rest.includes("--download") || rest.includes("-d");
-    const yes = rest.includes("--yes") || rest.includes("-y");
-    const skipSpk = rest.includes("--skip-spk") || rest.includes("--no-spk");
-    let modelsDir: string | undefined;
-    const md = rest.findIndex((a) => a === "--models-dir");
-    if (md >= 0 && rest[md + 1]) modelsDir = rest[md + 1];
-    const ok = await runSetup({
-      download,
-      yes,
-      skipSpk,
-      modelsDir,
-      uiLangFlag: readUiLangFlag(process.argv),
-    });
-    hardExit(ok ? 0 : 1);
+function printDevices(): void {
+  const devices = listInputDevices();
+  if (!devices.length) {
+    console.log(t("cli.noDevices"));
+    hardExit(1);
   }
-  if (cmd === "paths" || cmd === "config") {
-    const saved = loadSettings();
-    setUiLang(resolveUiLang({ flag: readUiLangFlag(), saved: saved.uiLang }));
-    printPaths();
-    hardExit(0);
+  console.log(`${t("cli.listDevices")}:\n`);
+  devices.forEach((d, i) => {
+    console.log(`  [${i}]  ${d.name}`);
+  });
+  if (process.platform === "win32") {
+    console.log("\n" + t("cli.sourceHint"));
   }
-  return false;
+}
+
+function printDoctor(): void {
+  const saved = loadSettings();
+  setUiLang(resolveUiLang({ flag: readUiLangFlag(), saved: saved.uiLang }));
+  ensureConfigDir();
+  const overrides = modelOverridesFromSettings();
+  const check = checkModels(overrides, { requireSpk: !saved.noSpk });
+  const p = check.paths;
+  const ok = (b: boolean) => (b ? "✓" : "✗");
+  const exists = (f: string) => fs.existsSync(f);
+
+  console.log(`baribari doctor  v${pkg.version}`);
+  console.log("");
+  console.log("Environment");
+  console.log(`  node        ${process.version}`);
+  console.log(`  platform    ${process.platform} ${process.arch}`);
+  console.log(`  cwd         ${process.cwd()}`);
+  console.log(`  package     ${packageRoot()}`);
+  console.log("");
+  console.log("Config");
+  console.log(`  configDir   ${configDir()}`);
+  console.log(`  config.json ${ok(exists(path.join(configDir(), "config.json")))}  ${path.join(configDir(), "config.json")}`);
+  console.log(`  uiLang      ${uiLangLabel(getUiLang())} (${getUiLang()})`);
+  console.log(`  asr lang    ${saved.lang ?? "auto"}`);
+  console.log(`  source      ${saved.source ?? defaultSource()}`);
+  console.log("");
+  console.log("Models");
+  console.log(`  modelsDir   ${p.modelsDir}`);
+  console.log(`  vad         ${ok(exists(p.vad))}  ${p.vad}`);
+  console.log(`  asr model   ${ok(exists(p.senseVoiceModel))}  ${p.senseVoiceModel}`);
+  console.log(`  asr tokens  ${ok(exists(p.senseVoiceTokens))}  ${p.senseVoiceTokens}`);
+  console.log(`  speaker     ${ok(exists(p.spk))}  ${p.spk}`);
+  if (check.missing.length) {
+    console.log("");
+    console.log("Missing:");
+    for (const m of check.missing) console.log(`  - [${m.key}] ${m.path}`);
+    console.log(`\nFix: baribari setup --download`);
+  }
+  console.log("");
+  console.log("AI");
+  const ai = mergeAi(saved.ai);
+  const key = resolveApiKey(ai);
+  console.log(`  enabled     ${ai.enabled ? "yes" : "no"}`);
+  console.log(`  active      ${aiActive(ai) ? "yes" : "no"}`);
+  console.log(`  baseUrl     ${ai.baseUrl}`);
+  console.log(`  model       ${ai.model}`);
+  console.log(`  apiKey      ${key ? "set (" + key.slice(0, 3) + "…)" : "missing"}`);
+  console.log(`  translate   ${ai.translateTo || "off"}`);
+  console.log("");
+  console.log("Share");
+  const share = mergeShare(saved.share);
+  console.log(`  enabled     ${share.enabled ? "yes" : "no"}`);
+  console.log(`  port        ${share.port}`);
+  console.log(`  host        ${share.host}`);
+  console.log("");
+  console.log("Audio devices");
+  try {
+    const devices = listInputDevices();
+    if (!devices.length) console.log("  (none found)");
+    else devices.slice(0, 8).forEach((d, i) => console.log(`  [${i}] ${d.name}`));
+    if (devices.length > 8) console.log(`  … +${devices.length - 8} more`);
+  } catch (e) {
+    console.log(`  error: ${e instanceof Error ? e.message : e}`);
+  }
+  console.log("");
+  console.log(check.ok ? "Status: ready" : "Status: needs setup");
+  hardExit(check.ok ? 0 : 1);
+}
+
+function printCompletion(shell: string): void {
+  const name = "baribari";
+  const s = shell.toLowerCase();
+  if (s === "bash") {
+    console.log(`# bash completion for ${name}
+# Add to ~/.bashrc:  eval "$(${name} completion bash)"
+_${name}_completions() {
+  local cur="\${COMP_WORDS[COMP_CWORD]}"
+  local cmds="setup paths config devices doctor demo join completion help"
+  local opts="--lang --ui-lang --source --device --output --no-spk --spk-threshold --no-tui --record --record-dir --ai --no-ai --ai-translate --ai-base-url --ai-model --ai-key --share --no-share --share-port --join --vad-threshold --vad-min-speech --vad-min-silence --vad-max-speech --vad-window --list-devices --demo --help --version"
+  if [[ \${COMP_CWORD} -eq 1 ]]; then
+    COMPREPLY=( $(compgen -W "\${cmds} \${opts}" -- "\${cur}") )
+  else
+    COMPREPLY=( $(compgen -W "\${opts}" -- "\${cur}") )
+  fi
+}
+complete -F _${name}_completions ${name}
+`);
+  } else if (s === "zsh") {
+    console.log(`# zsh completion for ${name}
+# Add to ~/.zshrc:  eval "$(${name} completion zsh)"
+#compdef ${name}
+_${name}() {
+  local -a cmds opts
+  cmds=(setup paths config devices doctor demo join completion help)
+  opts=(--lang --ui-lang --source --device --output --no-spk --spk-threshold --no-tui --record --record-dir --ai --no-ai --ai-translate --ai-base-url --ai-model --ai-key --share --no-share --share-port --join --vad-threshold --vad-min-speech --vad-min-silence --vad-max-speech --vad-window --list-devices --demo --help --version)
+  _arguments \\
+    '1:command:(\${cmds})' \\
+    '*::options:->opts'
+  case \$state in
+    opts) _arguments \${opts} ;;
+  esac
+}
+compdef _${name} ${name}
+`);
+  } else if (s === "fish") {
+    console.log(`# fish completion for ${name}
+# Save as ~/.config/fish/completions/${name}.fish
+complete -c ${name} -f
+complete -c ${name} -n "__fish_use_subcommand" -a "setup" -d "Install / check models"
+complete -c ${name} -n "__fish_use_subcommand" -a "paths" -d "Print config paths"
+complete -c ${name} -n "__fish_use_subcommand" -a "devices" -d "List audio devices"
+complete -c ${name} -n "__fish_use_subcommand" -a "doctor" -d "Health check"
+complete -c ${name} -n "__fish_use_subcommand" -a "demo" -d "Demo TUI"
+complete -c ${name} -n "__fish_use_subcommand" -a "join" -d "Join LAN share"
+complete -c ${name} -n "__fish_use_subcommand" -a "completion" -d "Shell completion"
+complete -c ${name} -l lang -d "ASR language"
+complete -c ${name} -l ui-lang -d "UI language"
+complete -c ${name} -l source -d "Audio source"
+complete -c ${name} -l help -d "Help"
+complete -c ${name} -l version -d "Version"
+`);
+  } else if (s === "powershell" || s === "pwsh") {
+    console.log(`# PowerShell completion for ${name}
+# Add to $PROFILE:  ${name} completion powershell | Out-String | Invoke-Expression
+Register-ArgumentCompleter -Native -CommandName ${name} -ScriptBlock {
+  param(\$wordToComplete, \$commandAst, \$cursorPosition)
+  \$cmds = @('setup','paths','config','devices','doctor','demo','join','completion','help')
+  \$opts = @('--lang','--ui-lang','--source','--device','--output','--ai','--share','--join','--help','--version')
+  (\$cmds + \$opts) | Where-Object { \$_ -like "\$wordToComplete*" } | ForEach-Object {
+    [System.Management.Automation.CompletionResult]::new(\$_, \$_, 'ParameterValue', \$_)
+  }
+}
+`);
+  } else {
+    console.error(`Unknown shell: ${shell}. Use: bash | zsh | fish | powershell`);
+    hardExit(2);
+  }
+}
+
+function addRunOptions(cmd: Command): Command {
+  return cmd
+    .option("--lang <lang>", `ASR language: ${LANGS.join("|")}`)
+    .option("--ui-lang <lang>", `UI language: ${UI_LANGS.join("|")}`)
+    .option("--device <id>", "Mic device index or name")
+    .option("--list-devices", "List mic devices and exit")
+    .option("--source <src>", `Audio source: ${SOURCES.join("|")}`)
+    .option("-o, --output <file>", "Append transcript to file")
+    .option("--no-spk", "Disable speaker identification")
+    .option("--spk-threshold <n>", "Speaker match threshold 0–1", (v) =>
+      parseFloat(v),
+    )
+    .option("--no-tui", "Plain-text mode (no fullscreen TUI)")
+    .option("--record <path>", "Start WAV recording on launch")
+    .option("--record-dir <dir>", "Default recording directory")
+    .option("--ai", "Enable AI correct/translate")
+    .option("--no-ai", "Disable AI")
+    .option("--ai-correct", "Enable AI correction")
+    .option("--no-ai-correct", "Disable AI correction")
+    .option("--ai-translate <lang>", "AI translate target (empty disables)")
+    .option("--ai-base-url <url>", "OpenAI-compatible API base URL")
+    .option("--ai-model <id>", "Chat model id")
+    .option("--ai-key <key>", "API key (or BARIBARI_AI_KEY)")
+    .option("--share", "Enable LAN share")
+    .option("--no-share", "Disable LAN share")
+    .option("--share-port <n>", "Share port", (v) => parseInt(v, 10))
+    .option("--join <url>", "Join LAN share (receive only)")
+    .option("--vad-threshold <n>", "VAD threshold 0–1", (v) => parseFloat(v))
+    .option("--vad-min-speech <sec>", "Min speech seconds", (v) => parseFloat(v))
+    .option(
+      "--vad-min-silence <sec>",
+      "Silence seconds to split",
+      (v) => parseFloat(v),
+    )
+    .option("--vad-max-speech <sec>", "Max segment seconds", (v) => parseFloat(v))
+    .option(
+      "--vad-window <samples>",
+      "VAD frame samples @16kHz",
+      (v) => parseInt(v, 10),
+    )
+    .option("--demo", "Demo TUI with fake data");
 }
 
 async function main() {
   ensureConfigDir();
-  const utilArgv = process.argv.slice(2);
-  if (await runUtilityCommands(utilArgv)) return;
+  const argv = process.argv.slice(2);
+  const skipLangPrompt =
+    argv.includes("--help") ||
+    argv.includes("-h") ||
+    argv.includes("--version") ||
+    argv.includes("-V") ||
+    argv.includes("--list-devices") ||
+    argv[0] === "completion" ||
+    argv[0] === "doctor" ||
+    argv[0] === "paths" ||
+    argv[0] === "config" ||
+    argv[0] === "devices" ||
+    argv[0] === "help";
 
-  const saved = loadSettings();
-  const recDefault = defaultRecordDir();
-  const uiLangFlag = readUiLangFlag();
-
-  // Resolve UI language early (prompt on first run if unset)
-  {
+  // Resolve UI language early (except pure meta commands)
+  if (!skipLangPrompt || argv.includes("--ui-lang") || argv.some((a) => a.startsWith("--ui-lang="))) {
     await ensureUiLang({
-      flag: uiLangFlag,
-      skipPrompt:
-        utilArgv.includes("--help") ||
-        utilArgv.includes("-h") ||
-        utilArgv.includes("--list-devices"),
+      flag: readUiLangFlag(),
+      skipPrompt: skipLangPrompt,
     });
+  } else {
+    const saved = loadSettings();
+    setUiLang(resolveUiLang({ flag: readUiLangFlag(), saved: saved.uiLang }));
   }
 
   const program = new Command();
   program
     .name("baribari")
     .description(
-      `${t("app.desc")}\n` +
-        `config: ${configDir()}\n` +
-        "commands: setup | paths",
+      `${t("app.desc")}\n\n` +
+        `Config: ${configDir()}\n` +
+        `Docs:   https://github.com/QinYangWang/baribari`,
     )
-    .option("--lang <lang>", `${t("cli.lang")}: ${LANGS.join("|")}`)
-    .option("--ui-lang <lang>", `${t("cli.uiLang")}`)
-    .option("--device <id>", t("cli.deviceOpt"))
-    .option("--list-devices", t("cli.listDevices"))
-    .option("--source <src>", t("cli.sourceOpt"))
-    .option("-o, --output <file>", t("cli.outputOpt"))
-    .option("--no-spk", t("cli.noSpk"))
-    .option(
-      "--spk-threshold <n>",
-      t("cli.spkThreshold"),
-      (v) => parseFloat(v),
-    )
-    .option("--no-tui", t("cli.noTui"))
-    .option("--record <path>", t("cli.record"))
-    .option("--record-dir <dir>", t("cli.recordDir"))
-    .option("--ai", t("cli.ai"))
-    .option("--no-ai", t("cli.noAi"))
-    .option("--ai-correct", t("cli.aiCorrect"))
-    .option("--no-ai-correct", t("cli.noAiCorrect"))
-    .option("--ai-translate <lang>", t("cli.aiTranslate"))
-    .option("--ai-base-url <url>", t("cli.aiBaseUrl"))
-    .option("--ai-model <id>", t("cli.aiModel"))
-    .option("--ai-key <key>", t("cli.aiKey"))
-    .option("--share", t("cli.share"))
-    .option("--no-share", t("cli.noShare"))
-    .option("--share-port <n>", t("cli.sharePort"), (v) => parseInt(v, 10))
-    .option("--join <url>", t("cli.join"))
-    .option(
-      "--vad-threshold <n>",
-      t("cli.vadThreshold"),
-      (v) => parseFloat(v),
-    )
-    .option(
-      "--vad-min-speech <sec>",
-      t("cli.vadMinSpeech"),
-      (v) => parseFloat(v),
-    )
-    .option(
-      "--vad-min-silence <sec>",
-      t("cli.vadMinSilence"),
-      (v) => parseFloat(v),
-    )
-    .option(
-      "--vad-max-speech <sec>",
-      t("cli.vadMaxSpeech"),
-      (v) => parseFloat(v),
-    )
-    .option(
-      "--vad-window <samples>",
-      t("cli.vadWindow"),
-      (v) => parseInt(v, 10),
-    )
-    .option("--demo", t("cli.demo"))
-    .parse(process.argv);
+    .version(pkg.version, "-V, --version", "Print version number")
+    .helpOption("-h, --help", "Show help")
+    .addHelpText(
+      "after",
+      `
+Examples:
+  $ baribari                          Start live TUI transcription
+  $ baribari setup --download         Download models
+  $ baribari --source loopback        Capture system audio (Windows)
+  $ baribari --ai --ai-translate en   AI enhance + translate to English
+  $ baribari --share                  Broadcast transcript on LAN
+  $ baribari join http://host:8787    Join a shared session
+  $ baribari devices                  List microphones
+  $ baribari doctor                   Health check
+  $ baribari completion bash          Shell completions
 
-  const opts = program.opts<{
-    lang?: string;
-    uiLang?: string;
-    device?: string;
-    listDevices?: boolean;
-    source?: string;
-    output?: string;
-    spk: boolean;
-    spkThreshold?: number;
-    tui: boolean;
-    record?: string;
-    recordDir?: string;
-    ai?: boolean;
-    aiCorrect?: boolean;
-    aiTranslate?: string;
-    aiBaseUrl?: string;
-    aiModel?: string;
-    aiKey?: string;
-    share?: boolean;
-    sharePort?: number;
-    join?: string;
-    vadThreshold?: number;
-    vadMinSpeech?: number;
-    vadMinSilence?: number;
-    vadMaxSpeech?: number;
-    vadWindow?: number;
-    demo?: boolean;
-  }>();
+Environment:
+  BARIBARI_CONFIG_DIR   Override config directory
+  BARIBARI_UI_LANG      UI language (zh|ja|en)
+  BARIBARI_AI_KEY       OpenAI-compatible API key
+  OPENAI_API_KEY        Fallback API key
+`,
+    )
+    .showHelpAfterError(true)
+    .showSuggestionAfterError(true);
+
+  // default command = run
+  addRunOptions(program).action(async (_opts, cmd) => {
+    await runMain(cmd.opts());
+  });
+
+  program
+    .command("setup")
+    .description("Check / download ASR models")
+    .option("-d, --download", "Download missing models")
+    .option("-y, --yes", "Non-interactive yes")
+    .option("--skip-spk", "Skip speaker embedding model")
+    .option("--no-spk", "Alias of --skip-spk")
+    .option("--models-dir <dir>", "Set models directory")
+    .option("--ui-lang <lang>", `UI language: ${UI_LANGS.join("|")}`)
+    .action(async (opts) => {
+      const ok = await runSetup({
+        download: !!opts.download,
+        yes: !!opts.yes,
+        skipSpk: !!(opts.skipSpk || opts.spk === false),
+        modelsDir: opts.modelsDir,
+        uiLangFlag: opts.uiLang ?? readUiLangFlag(),
+      });
+      hardExit(ok ? 0 : 1);
+    });
+
+  program
+    .command("paths")
+    .alias("config")
+    .description("Print config and model paths")
+    .action(() => {
+      printPaths();
+      hardExit(0);
+    });
+
+  program
+    .command("devices")
+    .alias("ls-devices")
+    .description("List microphone input devices")
+    .action(() => {
+      printDevices();
+      hardExit(0);
+    });
+
+  program
+    .command("doctor")
+    .description("Diagnose environment, models, and config")
+    .action(() => {
+      printDoctor();
+    });
+
+  program
+    .command("demo")
+    .description("Run TUI with fake transcript data (no models)")
+    .action(async () => {
+      await runDemo();
+    });
+
+  program
+    .command("join")
+    .description("Join a LAN share session (receive only)")
+    .argument("<url>", "Share URL, e.g. http://192.168.1.10:8787")
+    .option("--no-tui", "Plain-text mode")
+    .option("-o, --output <file>", "Append transcript to file")
+    .action(async (url: string, opts: { tui?: boolean; output?: string }) => {
+      await runJoin(url, {
+        noTui: opts.tui === false || !process.stdout.isTTY,
+        output: opts.output,
+      });
+    });
+
+  program
+    .command("completion")
+    .description("Generate shell completion script")
+    .argument("[shell]", "bash | zsh | fish | powershell", "bash")
+    .action((shell: string) => {
+      printCompletion(shell);
+      hardExit(0);
+    });
+
+  // Legacy top-level flags still work via default action
+  await program.parseAsync(process.argv);
+}
+
+type RunOpts = {
+  lang?: string;
+  uiLang?: string;
+  device?: string;
+  listDevices?: boolean;
+  source?: string;
+  output?: string;
+  spk: boolean;
+  spkThreshold?: number;
+  tui: boolean;
+  record?: string;
+  recordDir?: string;
+  ai?: boolean;
+  aiCorrect?: boolean;
+  aiTranslate?: string;
+  aiBaseUrl?: string;
+  aiModel?: string;
+  aiKey?: string;
+  share?: boolean;
+  sharePort?: number;
+  join?: string;
+  vadThreshold?: number;
+  vadMinSpeech?: number;
+  vadMinSilence?: number;
+  vadMaxSpeech?: number;
+  vadWindow?: number;
+  demo?: boolean;
+};
+
+async function runMain(opts: RunOpts) {
+  const saved = loadSettings();
+  const recDefault = defaultRecordDir();
 
   if (opts.demo) {
     await runDemo();
@@ -222,17 +468,7 @@ async function main() {
   }
 
   if (opts.listDevices) {
-    const devices = listInputDevices();
-    if (!devices.length) {
-      console.log(t("cli.noDevices"));
-      process.exit(1);
-    }
-    devices.forEach((d, i) => {
-      console.log(`[${i}]\t${d.name}`);
-    });
-    if (process.platform === "win32") {
-      console.log("\n" + t("cli.sourceHint"));
-    }
+    printDevices();
     return;
   }
 

@@ -1,142 +1,177 @@
+<div align="center">
+
 # baribari
 
-[English](./README.md) | [中文](./README.zh.md) | **日本語**
+**ターミナルで会議をリアルタイム文字起こし**
 
-会議リアルタイム文字起こし CLI（SenseVoice + Silero VAD + 話者識別 · AI 校正/翻訳 · LAN 共有）。
+SenseVoice · Silero VAD · 話者識別 · AI 校正/翻訳 · LAN 共有
 
-`pi` のようにインストール後すぐ実行。設定とモデルはユーザーディレクトリに置きます。
+[![npm](https://img.shields.io/npm/v/baribari.svg)](https://www.npmjs.com/package/baribari)
+[![Node](https://img.shields.io/node/v/baribari.svg)](https://nodejs.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-```bash
-npm i -g baribari   # または: npm link（開発）
-baribari            # 初回はモデル導入ガイド
-baribari setup      # モデル確認 / インストール
-baribari paths      # 設定とモデルパスを表示
-```
-
-## ディレクトリ構成
-
-既定（環境変数 `BARIBARI_CONFIG_DIR` で上書き可）：
-
-```
-~/.config/baribari/
-  config.json          # 設定（認識/表示言語、音源、VAD、AI、共有…）
-  models/              # モデル
-  recordings/          # 既定の録音ディレクトリ
-```
-
-### モデルパスのカスタム
-
-`~/.config/baribari/config.json` を編集：
-
-```json
-{
-  "modelsDir": "D:/models/baribari",
-  "models": {
-    "vad": "D:/models/silero_vad.onnx",
-    "senseVoiceDir": "D:/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17",
-    "spk": "D:/models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx"
-  }
-}
-```
-
-または：
+[English](./README.md) · [中文](./README.zh.md) · **日本語**
 
 ```bash
-baribari setup --models-dir D:/models/baribari
+npm i -g baribari && baribari
 ```
 
-## モデル（手動ダウンロード）
+</div>
 
-`~/.config/baribari/models/`（または `modelsDir`）へ配置：
+---
 
-| コンポーネント | ファイル | ダウンロード |
-|----------------|----------|--------------|
-| VAD | `silero_vad.onnx` | https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx |
-| ASR | `sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/`（`model.int8.onnx` + `tokens.txt`） | https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2 |
-| 声紋 | `3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx` | https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx |
+## なぜ baribari？
 
-リリースページ：
+| | |
+|---|---|
+| **会議向け TUI** | 話者 · リアルタイム転写 · デバイス/録音/共有 |
+| **ローカル ASR** | SenseVoice + Silero VAD（クラウド不要で認識可） |
+| **話者ラベル** | 声紋 + 複数窓投票 |
+| **任意の AI** | OpenAI 互換の校正・翻訳 |
+| **LAN 共有** | ホストが配信、ブラウザ/CLI で参加 |
+| **ユーザー設定** | `~/.config/baribari` |
 
-- ASR/VAD: https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models  
-- 声紋: https://github.com/k2-fsa/sherpa-onnx/releases/tag/speaker-recongition-models  
+---
 
-自動ダウンロード：
+## 目次
+
+- [インストール](#インストール)
+- [クイックスタート](#クイックスタート)
+- [CLI](#cli)
+- [TUI キー](#tui-キー)
+- [設定](#設定)
+- [モデル](#モデル)
+- [AI](#ai)
+- [LAN 共有](#lan-共有)
+- [開発](#開発)
+- [ライセンス](#ライセンス)
+
+---
+
+## インストール
+
+**要件:** Node.js **≥ 18**。マイク+システム音声は **Windows** が最も充実。
 
 ```bash
-baribari setup --download
-# 声紋なし:
-baribari setup --download --skip-spk
+npm install -g baribari
 ```
 
-## 使い方
+---
+
+## クイックスタート
 
 ```bash
-baribari                              # TUI。Win 既定はマイク+スピーカー
-baribari --source loopback
-baribari --lang ja -o meeting.txt
-baribari --ui-lang ja                 # 表示言語 zh|ja|en
-baribari --ai --ai-translate en
-baribari --share                      # LAN 共有
-baribari --join http://192.168.1.10:8787/
-baribari --vad-min-silence 0.35       # より細かく分割
+baribari setup --download   # 表示言語 + モデル
+baribari                    # 全画面 TUI
+baribari doctor             # 診断
 ```
 
-### 主なオプション
+---
 
-| フラグ | 意味 |
-|--------|------|
-| `--lang` | 認識言語 `auto\|zh\|en\|ja\|ko\|yue` |
-| `--ui-lang` | 表示言語 `zh\|ja\|en`（`BARIBARI_UI_LANG` / OS ロケールも可） |
-| `--source` | `mic` / `loopback` / `both` |
-| `--ai` / `--ai-translate` / `--ai-base-url` / `--ai-model` | AI 校正/翻訳 |
-| `--share` / `--join` | LAN 共有 / 参加 |
-| `--vad-threshold` / `--vad-min-speech` / `--vad-min-silence` / `--vad-max-speech` / `--vad-window` | VAD |
-| `--record-dir` | 録音ディレクトリ（既定 `~/.config/baribari/recordings`） |
+## CLI
 
-API Key：`BARIBARI_AI_KEY` または `OPENAI_API_KEY`。
+```text
+baribari [options]               ライブ転写（既定）
+baribari setup [options]         モデル確認/DL
+baribari paths | config          パス表示
+baribari devices                 マイク一覧
+baribari doctor                  診断
+baribari demo                    ダミー TUI
+baribari join <url>              LAN 共有に参加
+baribari completion [shell]      bash | zsh | fish | powershell
+baribari -h | -V                 ヘルプ / バージョン
+```
 
-### TUI
+| 主なオプション | 説明 |
+|-----------------|------|
+| `--lang` | 認識 `auto\|zh\|en\|ja\|ko\|yue` |
+| `--ui-lang` | 表示 `zh\|ja\|en` |
+| `--source` | `mic\|loopback\|both` |
+| `--ai` / `--ai-translate` | AI 強化 / 翻訳先 |
+| `--share` / `join` | LAN 共有 |
+| `--vad-min-silence` | 無音で切る秒数（小さいほど頻繁） |
+
+```bash
+eval "$(baribari completion bash)"
+```
+
+詳細は [English README](./README.md) を参照。
+
+---
+
+## TUI キー
 
 | キー | 動作 |
 |------|------|
 | `p` | 一時停止 |
-| `s` | 設定（VAD、AI、表示言語など） |
+| `s` | 設定 |
 | `h` | 共有 |
 | `r` | 録音 |
-| `Tab` | 話者 / 転写フォーカス切替 |
+| `Tab` | フォーカス切替 |
 | `q` | 終了 |
 
-3 カラム：話者 · リアルタイム転写 · デバイス/録音/共有状態。  
-実行時メッセージはフッターショートカット上のバーに表示されます。
+字幕は **VAD が区間を切った後** に出ます（逐語ストリームではありません）。
+
+---
+
+## 設定
+
+```text
+~/.config/baribari/
+├── config.json
+├── models/
+└── recordings/
+```
+
+環境変数: `BARIBARI_CONFIG_DIR` · `BARIBARI_UI_LANG` · `BARIBARI_AI_KEY` / `OPENAI_API_KEY`
+
+---
+
+## モデル
+
+```bash
+baribari setup --download
+baribari paths
+```
+
+---
+
+## AI
+
+```bash
+export BARIBARI_AI_KEY=sk-...
+baribari --ai --ai-translate en
+```
+
+OpenAI 互換 Chat Completions。原文と訳文は別行。
+
+---
+
+## LAN 共有
+
+```bash
+baribari --share
+baribari join http://192.168.x.x:8787/
+```
+
+---
 
 ## 開発
 
 ```bash
-git clone https://github.com/QinYangWang/baribari.git
-cd baribari
-npm install
-npm run build
-npm link          # グローバル baribari → このリポジトリ
+npm install && npm run typecheck && npm run dev -- --demo
 ```
 
-## ソース構成
+公開: `package.json` と同じ `v*` タグを push（Actions → npm）。
 
-```
-src/
-  index.ts           # CLI
-  i18n/              # UI 文言 zh/ja/en
-  setup.ts           # 初回ガイド / ダウンロード
-  paths.ts           # ~/.config/baribari
-  settings.ts        # config.json
-  ai.ts / share-*.ts
-  audio-capture.ts / transcribe.ts / tui.ts
-```
+---
 
-## 公開
+## ライセンス
 
-`package.json` と同じバージョンの tag を push（GitHub Actions + npm Trusted Publishing）：
+[MIT](./LICENSE)
 
-```bash
-git tag v1.2.0
-git push origin v1.2.0
-```
+<div align="center">
+
+[npm](https://www.npmjs.com/package/baribari) · [Issues](https://github.com/QinYangWang/baribari/issues)
+
+</div>
