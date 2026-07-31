@@ -249,6 +249,68 @@ const en: MessageTree = {
     uiLang: "UI language: zh|ja|en",
     setup: "Check / install models",
     paths: "Print config and model paths",
+    help: "Show help",
+    version: "Print version number",
+    helpExamples: `
+Examples:
+  $ baribari                          Start live TUI transcription
+  $ baribari setup --download         Download models
+  $ baribari --source loopback        Capture system audio (Windows)
+  $ baribari --ai --ai-translate en   AI enhance + translate to English
+  $ baribari --share                  Broadcast transcript on LAN
+  $ baribari join http://host:8787    Join a shared session
+  $ baribari session list             List saved meetings
+  $ baribari resume demo              Replay built-in demo session
+  $ baribari resume ses_xxx           Replay a saved session
+  $ baribari devices                  List microphones
+  $ baribari doctor                   Health check
+  $ baribari completion bash          Shell completions
+
+Environment:
+  BARIBARI_CONFIG_DIR   Override config directory
+  BARIBARI_UI_LANG      UI language (zh|ja|en)
+  BARIBARI_AI_KEY       OpenAI-compatible API key
+  OPENAI_API_KEY        Fallback API key
+`,
+    cmdSetup: "Check / download ASR models",
+    setupDownload: "Download missing models",
+    setupYes: "Non-interactive yes",
+    setupSkipSpk: "Skip speaker embedding model",
+    setupNoSpk: "Alias of --skip-spk",
+    setupModelsDir: "Set models directory",
+    cmdPaths: "Print config and model paths",
+    cmdDevices: "List microphone input devices",
+    cmdDoctor: "Diagnose environment, models, and config",
+    cmdDemo: "Open the built-in demo session (same as: resume demo)",
+    cmdJoin: "Join a LAN share session (receive only)",
+    joinUrl: "Share URL, e.g. http://192.168.1.10:8787",
+    cmdSession: "List or delete saved meeting sessions",
+    sessionList: "List sessions (default)",
+    sessionRm: "Delete a session by id (not demo)",
+    sessionRmId: "Session id or prefix",
+    sessionPath: "Print session directory",
+    sessionPathId: "Session id",
+    cmdResume: "Browse a session · c continue · h share · q quit",
+    resumeId: "Session id / prefix / 'demo'",
+    cmdCompletion: "Generate shell completion script",
+    completionShell: "bash | zsh | fish | powershell",
+    sessionNotFound: "Session not found: {id}",
+    cannotDeleteDemo: "Cannot delete the built-in demo session",
+    deletedSession: "Deleted {id}",
+    listSessionsHint: "List sessions: baribari session list",
+    unknownShell: "Unknown shell: {shell}. Use: bash | zsh | fish | powershell",
+    noSessions: "No sessions yet. Run a meeting with: baribari",
+    sessionListHintResume: "Resume:  baribari resume <id>",
+    sessionListHintDelete: "Delete:  baribari session rm <id>",
+    sessionListHintDemo: "Demo:    baribari resume demo",
+    cannotContinue: "Cannot continue session: {id}",
+    doctorAudioDevices: "Audio devices",
+    doctorStatusReady: "Status: ready",
+    doctorStatusNeedsSetup: "Status: needs setup",
+    sessionUpdated: "Session updated",
+    sessionSaved: "Session saved",
+    sessionSaveBanner:
+      "{tag}: {id}\n  {dir}\n  Resume: baribari resume {id}",
   },
   setup: {
     title: "◆ baribari model setup guide",
@@ -314,6 +376,85 @@ const en: MessageTree = {
   },
   tuiExtra: {
     fullUrl: "Full URL",
+  },
+  resume: {
+    emptySession: "Empty session · c  continue · h  share · q  quit",
+    settingsTitle: "Settings",
+    settingsAiTarget: "AI translate to",
+    settingsAiModel: "AI model",
+    settingsApi: "API",
+    settingsApiOk: "Configured",
+    settingsApiMissing: "No key",
+    settingsKeys: "↑↓ select  ←→ change  Esc close",
+    off: "Off",
+    summaryTitle: "◆ Meeting summary",
+    rawError: "Raw error",
+    dismissHint: "Enter / Esc / any key  dismiss",
+    termTooSmall: "Terminal too small (min 48×12)",
+    footer: {
+      nav: "prev/next",
+      continue: "continue",
+      translate: "translate",
+      translateAll: "all",
+      summary: "summary",
+      settings: "settings",
+      share: "share",
+      shareStop: "unshare",
+      quit: "quit",
+      na: "—",
+    },
+    status: {
+      translatingOne: "Translating…",
+      translatingAll: "Translating all…",
+      translateProgress: "All {done}/{total}",
+      summarizing: "Summarizing…",
+      shareStarting: "Starting share…",
+      shareStopped: "Share stopped",
+      translatedOne: "Segment translated",
+      translatedAll: "Translated {n} segment(s)",
+      summaryDone: "Summary ready · m to hide",
+      demoNoContinue: "Demo sessions cannot continue",
+    },
+    alert: {
+      aiMissingTitle: "AI not configured",
+      aiMissingBody:
+        "Set API Key / baseUrl / model first.\nPress s for settings, or edit ~/.config/baribari/config.json",
+      noLangTitle: "No translate language",
+      noLangBody: "Press s for settings, then ←→ to pick a target language.",
+      hint: "Notice",
+      noFocus: "No segment selected",
+      alreadyTitle: "Already translated",
+      alreadyBody: "This segment already has a translation.\nUse T to translate all missing ones.",
+      noText: "This segment has no text",
+      emptyTransTitle: "Empty translation",
+      emptyTransBody: "AI returned no usable translation. Try again later.",
+      noNeedTitle: "Nothing to translate",
+      noNeedBody: "No segments need translation (already done or empty).",
+      shareOnTitle: "LAN share started",
+      shareOnBody:
+        "Open in browser:\n{urls}\n\nPress h again to stop share (stay in TUI).",
+      rateTitle: "Rate limited (429)",
+      rateBody:
+        "AI API rate limit. Wait and retry.\n· Slow down batch translate\n· Check quota / switch model or API",
+      authTitle: "Auth failed (401)",
+      authBody: "Invalid or missing API key.\nCheck apiKey and baseUrl in settings / config.",
+      forbidTitle: "Forbidden (403)",
+      forbidBody: "This key cannot use the selected model.",
+      serverTitle: "Server error",
+      serverBody: "AI service is temporarily unavailable. Retry later.",
+      netTitle: "Network error",
+      netBody: "Cannot reach AI endpoint. Check network and baseUrl.",
+      cfgTitle: "Incomplete config",
+      errTitle: "Something went wrong",
+      errBody: "The action failed. See raw details below.",
+    },
+    ai: {
+      notConfigured: "AI not configured: API Key / baseUrl / model",
+      noTranslateLang: "Set an AI translate target language in settings first",
+      noSummaryText: "No transcript text to summarize",
+      emptySummary: "AI returned an empty summary",
+    },
+    continueBanner: "Resume {id} · +{offset}s",
   },
 };
 

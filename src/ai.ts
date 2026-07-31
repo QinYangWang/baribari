@@ -31,10 +31,15 @@ export function resolveApiKey(cfg: AiConfig): string {
   );
 }
 
+/** Has API key + endpoint + model (for batch translate / summary). */
+export function aiConfigured(cfg: AiConfig): boolean {
+  return Boolean(resolveApiKey(cfg) && cfg.baseUrl?.trim() && cfg.model?.trim());
+}
+
 export function aiActive(cfg: AiConfig): boolean {
   if (!cfg.enabled) return false;
   if (!cfg.correct && !cfg.translateTo) return false;
-  return Boolean(resolveApiKey(cfg) && cfg.baseUrl && cfg.model);
+  return aiConfigured(cfg);
 }
 
 function systemPrompt(cfg: AiConfig): string {
@@ -295,6 +300,127 @@ export function createAiPipeline(
       }
     },
   };
+}
+
+/**
+ * Translate segments that lack translation, using cfg.translateTo.
+ * Mutates segments in place; returns count translated.
+ */
+export async function translateMissingSegments(
+  segments: Array<{
+    text: string;
+    corrected?: string;
+    translation?: string;
+    spk?: number | null;
+  }>,
+  cfg: AiConfig,
+  onProgress?: (done: number, total: number) => void,
+  signal?: AbortSignal,
+): Promise<number> {
+  if (!aiConfigured(cfg) || !cfg.translateTo) {
+    throw new Error(
+      cfg.translateTo
+        ? t("resume.ai.notConfigured")
+        : t("resume.ai.noTranslateLang"),
+    );
+  }
+  const workCfg: AiConfig = {
+    ...cfg,
+    enabled: true,
+    correct: false,
+    translateTo: cfg.translateTo,
+  };
+  const pending = segments
+    .map((s, i) => ({ s, i }))
+    .filter(({ s }) => !(s.translation || "").trim() && (s.corrected || s.text || "").trim());
+  let done = 0;
+  for (const { s } of pending) {
+    if (signal?.aborted) break;
+    const seg: Segment = {
+      start: 0,
+      end: 0,
+      wall: new Date(),
+      spk: s.spk ?? null,
+      text: (s.corrected || s.text || "").trim(),
+    };
+    await enhanceSegment(seg, workCfg, signal);
+    if (seg.translation?.trim()) {
+      s.translation = seg.translation.trim();
+      done += 1;
+    }
+    onProgress?.(done, pending.length);
+  }
+  return done;
+}
+
+/** Meeting notes / summary from transcript lines. */
+export async function summarizeMeeting(
+  lines: Array<{ speaker?: string; text: string; translation?: string }>,
+  cfg: AiConfig,
+  opts?: { lang?: string; signal?: AbortSignal },
+): Promise<string> {
+  if (!aiConfigured(cfg)) {
+    throw new Error(t("resume.ai.notConfigured"));
+  }
+  const langName =
+    opts?.lang && LANG_NAME[opts.lang]
+      ? LANG_NAME[opts.lang]
+      : cfg.translateTo
+        ? LANG_NAME[cfg.translateTo] || cfg.translateTo
+        : "the same language as the majority of the transcript";
+
+  const body = lines
+    .map((l, i) => {
+      const sp = l.speaker ? `[${l.speaker}] ` : "";
+      const t0 = (l.text || "").trim();
+      const tr = (l.translation || "").trim();
+      return `${i + 1}. ${sp}${t0}${tr ? ` ‖ ${tr}` : ""}`;
+    })
+    .filter((l) => l.replace(/^\d+\.\s*/, "").trim())
+    .join("\n");
+
+  if (!body.trim()) throw new Error(t("resume.ai.noSummaryText"));
+
+  // truncate very long meetings
+  const clipped = body.length > 12000 ? body.slice(0, 12000) + "\n…" : body;
+
+  const key = resolveApiKey(cfg);
+  const base = cfg.baseUrl.replace(/\/+$/, "");
+  const res = await fetch(`${base}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify({
+      model: cfg.model,
+      temperature: 0.3,
+      messages: [
+        {
+          role: "system",
+          content:
+            `You are a meeting secretary. Write a clear structured summary in ${langName}. ` +
+            "Use markdown with sections: 概述/Overview, 要点/Key points, 决议与待办/Decisions & action items, 风险/ Risks (if any). " +
+            "Be faithful to the transcript; do not invent attendees or facts.",
+        },
+        {
+          role: "user",
+          content: `Meeting transcript:\n${clipped}`,
+        },
+      ],
+    }),
+    signal: opts?.signal,
+  });
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`AI HTTP ${res.status}: ${errBody.slice(0, 200)}`);
+  }
+  const data = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const content = (data.choices?.[0]?.message?.content || "").trim();
+  if (!content) throw new Error(t("resume.ai.emptySummary"));
+  return content;
 }
 
 export function translateLangLabel(lang: TranslateLang): string {

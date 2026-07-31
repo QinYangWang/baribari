@@ -49,6 +49,9 @@ export interface SessionMeta {
   builtin?: boolean;
   source?: string;
   lang?: string;
+  /** AI meeting summary (markdown), also written to summary.md */
+  summary?: string;
+  summaryAt?: string;
 }
 
 export interface SessionData {
@@ -449,30 +452,42 @@ export function buildDemoSession(): SessionData {
   };
 }
 
-/** Live session writer attached to a running meeting. */
-export function createSessionWriter(opts?: {
-  name?: string;
-  source?: string;
-  lang?: string;
-}): {
+export interface SessionWriter {
   id: string;
   dir: string;
   meta: SessionMeta;
   recordPath: string;
+  /** Seconds already on the timeline (0 for new sessions). */
+  timeOffset: number;
+  continuing: boolean;
   onSegment: (seg: Segment, speakers?: SessionSpeaker[]) => void;
   setSpeakers: (speakers: SessionSpeaker[]) => void;
   close: () => SessionMeta | null;
-} {
-  const { id, dir, meta } = createSession(opts);
+}
+
+function makeWriter(
+  id: string,
+  dir: string,
+  meta: SessionMeta,
+  timeOffset: number,
+  continuing: boolean,
+): SessionWriter {
   const recordPath = sessionAudioPath(dir);
   return {
     id,
     dir,
     meta,
     recordPath,
+    timeOffset,
+    continuing,
     onSegment(seg, speakers) {
       if (seg.pending) return;
-      appendSessionSegment(dir, seg, speakers);
+      const shifted: Segment = {
+        ...seg,
+        start: (seg.start || 0) + timeOffset,
+        end: (seg.end || 0) + timeOffset,
+      };
+      appendSessionSegment(dir, shifted, speakers);
     },
     setSpeakers(speakers) {
       fs.writeFileSync(
@@ -491,6 +506,53 @@ export function createSessionWriter(opts?: {
       return finalizeSession(dir);
     },
   };
+}
+
+/** Live session writer attached to a new meeting. */
+export function createSessionWriter(opts?: {
+  name?: string;
+  source?: string;
+  lang?: string;
+}): SessionWriter {
+  const { id, dir, meta } = createSession(opts);
+  return makeWriter(id, dir, meta, 0, false);
+}
+
+/**
+ * Re-open an existing session to append more transcript / audio.
+ * Timeline offset = previous duration so new ASR times continue the meeting clock.
+ * Returns null for missing / demo sessions.
+ */
+export function openSessionWriter(
+  idOrPath: string,
+  opts?: { source?: string; lang?: string },
+): SessionWriter | null {
+  if (idOrPath === DEMO_SESSION_ID || idOrPath === "demo") return null;
+  const data = loadSession(idOrPath);
+  if (!data || data.meta.builtin) return null;
+  const dir = data.meta.path;
+  if (!fs.existsSync(dir)) return null;
+  // refresh duration from disk before offsetting
+  const finalized = finalizeSession(dir, {
+    source: opts?.source ?? data.meta.source,
+    lang: opts?.lang ?? data.meta.lang,
+  });
+  const meta = finalized || data.meta;
+  // clear endedAt so session is "live" again
+  if (meta.endedAt) {
+    delete meta.endedAt;
+    meta.updatedAt = new Date().toISOString();
+    writeMeta(dir, meta);
+  }
+  const timeOffset = Math.max(0, meta.durationSec || 0);
+  return makeWriter(meta.id, dir, meta, timeOffset, true);
+}
+
+/** Whether this session can be continued (not demo, on disk). */
+export function canContinueSession(id: string): boolean {
+  if (!id || id === DEMO_SESSION_ID || id === "demo") return false;
+  const data = loadSession(id);
+  return Boolean(data && !data.meta.builtin && fs.existsSync(data.meta.path));
 }
 
 export function formatSessionRow(m: SessionMeta): string {
@@ -512,6 +574,54 @@ function formatDur(sec: number): string {
 
 export function segmentDisplay(s: SessionSegment): string {
   return (s.corrected || s.text || "").trim();
+}
+
+/** Persist AI summary into meta + summary.md under the session dir. */
+export function saveSessionSummary(dir: string, summary: string): void {
+  const text = summary.trim();
+  if (!text || !fs.existsSync(dir)) return;
+  fs.writeFileSync(path.join(dir, "summary.md"), text + "\n", "utf8");
+  const meta = readMetaFile(dir);
+  if (meta) {
+    meta.summary = text;
+    meta.summaryAt = new Date().toISOString();
+    meta.updatedAt = meta.summaryAt;
+    writeMeta(dir, meta);
+  }
+}
+
+export function loadSessionSummary(dir: string): string | undefined {
+  const f = path.join(dir, "summary.md");
+  if (fs.existsSync(f)) {
+    try {
+      return fs.readFileSync(f, "utf8").trim();
+    } catch {
+      /* ignore */
+    }
+  }
+  const meta = readMetaFile(dir);
+  return meta?.summary?.trim() || undefined;
+}
+
+/** Rewrite transcript.jsonl from in-memory segments (e.g. after batch translate). */
+export function rewriteSessionTranscript(
+  dir: string,
+  segments: SessionSegment[],
+): void {
+  const tf = path.join(dir, "transcript.jsonl");
+  const body = segments.map((s) => JSON.stringify(s) + "\n").join("");
+  fs.writeFileSync(tf, body, "utf8");
+  const meta = readMetaFile(dir);
+  if (meta) {
+    meta.segmentCount = segments.length;
+    meta.updatedAt = new Date().toISOString();
+    let maxEnd = 0;
+    for (const s of segments) {
+      if (s.end > maxEnd) maxEnd = s.end;
+    }
+    meta.durationSec = Math.max(meta.durationSec, maxEnd);
+    writeMeta(dir, meta);
+  }
 }
 
 // re-export helper used by callers

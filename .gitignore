@@ -4,8 +4,11 @@ models/
 recordings/
 out/
 *.wav
+!fixtures/**/*.wav
 *.pcm
 tmp_*
+fixtures/meetings/**/_parts/
+fixtures/_test_*
 baribari.config.json
 .DS_Store
 *.log

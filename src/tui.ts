@@ -185,11 +185,24 @@ function stripAnsi(s: string): string {
   return s.replace(/\x1b\[[0-9;]*m/g, "");
 }
 
-/** East-Asian-aware display width (ANSI ignored). */
+/** East-Asian / emoji display width in terminal columns. Critical for panel clipping. */
 export function dw(s: string): number {
   let w = 0;
   for (const ch of stripAnsi(s)) {
     const c = ch.codePointAt(0)!;
+    // zero-width / combining
+    if (
+      c === 0x200b ||
+      c === 0x200c ||
+      c === 0x200d ||
+      c === 0xfeff ||
+      (c >= 0x0300 && c <= 0x036f) ||
+      (c >= 0xfe00 && c <= 0xfe0f) ||
+      (c >= 0xe0100 && c <= 0xe01ef)
+    ) {
+      continue;
+    }
+    // wide: CJK, Hangul, fullwidth, emoji, rare planes
     if (
       c >= 0x1100 &&
       (c <= 0x115f ||
@@ -202,7 +215,9 @@ export function dw(s: string): number {
         (c >= 0xfe30 && c <= 0xfe6f) ||
         (c >= 0xff00 && c <= 0xff60) ||
         (c >= 0xffe0 && c <= 0xffe6) ||
-        (c >= 0x1f300 && c <= 0x1f9ff))
+        (c >= 0x1b000 && c <= 0x1b0ff) ||
+        (c >= 0x1f200 && c <= 0x1f9ff) ||
+        (c >= 0x20000 && c <= 0x3fffd))
     ) {
       w += 2;
     } else {
@@ -213,17 +228,51 @@ export function dw(s: string): number {
 }
 
 function truncateDisplay(text: string, maxWidth: number): string {
+  if (maxWidth <= 0) return "";
   if (dw(text) <= maxWidth) return text;
-  if (maxWidth <= 1) return "…".slice(0, maxWidth);
+  if (maxWidth === 1) return "…";
   let out = "";
   let w = 0;
   for (const ch of text) {
     const cw = dw(ch);
+    // keep 1 col for ellipsis; never start a wide char with only 1 col left
     if (w + cw > maxWidth - 1) break;
     out += ch;
     w += cw;
   }
+  // if nothing fit (e.g. maxWidth=2 and first char is wide), just ellipsis
+  if (!out) return "…";
   return out + "…";
+}
+
+/** Keep head + tail for long ids (model names, paths, URLs). */
+function truncateMiddleDisplay(text: string, maxWidth: number): string {
+  if (maxWidth <= 0) return "";
+  if (dw(text) <= maxWidth) return text;
+  if (maxWidth <= 3) return truncateDisplay(text, maxWidth);
+  const ell = "…";
+  const budget = maxWidth - dw(ell);
+  const headBudget = Math.max(1, Math.ceil(budget * 0.55));
+  const tailBudget = Math.max(1, budget - headBudget);
+  let head = "";
+  let hw = 0;
+  for (const ch of text) {
+    const cw = dw(ch);
+    if (hw + cw > headBudget) break;
+    head += ch;
+    hw += cw;
+  }
+  let tail = "";
+  let tw = 0;
+  for (let i = text.length - 1; i >= 0; i--) {
+    const ch = text[i]!;
+    const cw = dw(ch);
+    if (tw + cw > tailBudget) break;
+    tail = ch + tail;
+    tw += cw;
+  }
+  if (head.length + tail.length >= text.length) return text;
+  return head + ell + tail;
 }
 
 function padDisplay(
@@ -250,8 +299,17 @@ function wrapDisplay(text: string, width: number): string[] {
   let lw = 0;
   for (const ch of text) {
     const cw = dw(ch);
-    if (lw + cw > width && line) {
-      out.push(line);
+    if (cw > width) {
+      // glyph wider than column (shouldn't happen for normal CJK at width>=2)
+      if (line) {
+        out.push(line);
+        line = "";
+        lw = 0;
+      }
+      continue;
+    }
+    if (lw + cw > width) {
+      if (line) out.push(line);
       line = ch;
       lw = cw;
     } else {
@@ -351,14 +409,37 @@ function putChar(
   y: number,
   ch: string,
   style: Partial<Cell> = {},
+  /** exclusive right bound (column index). Wide chars that would cross are dropped. */
+  maxX?: number,
 ): void {
   const row = buf[y];
   if (!row || x < 0 || x >= row.length || y < 0) return;
   const cw = dw(ch);
   if (cw <= 0) return;
+  // hard clip: never write past maxX or buffer edge
+  const right = maxX != null ? Math.min(maxX, row.length) : row.length;
+  if (x >= right) return;
+  if (x + cw > right) {
+    // not enough room for this glyph (typical: wide CJK at last col)
+    // leave a blank so we don't spill into the next panel
+    row[x] = {
+      char: " ",
+      fg: style.fg,
+      bg: style.bg,
+      bold: style.bold,
+      dim: style.dim,
+      continuation: false,
+      href: style.href,
+    };
+    return;
+  }
   // clear previous wide-char tail if overwriting mid-cell
   if (row[x]?.continuation && x > 0) {
     row[x - 1] = emptyCell();
+  }
+  // if overwriting start of a previous wide char, clear its tail
+  if (row[x] && !row[x]!.continuation && dw(row[x]!.char) === 2 && x + 1 < row.length) {
+    if (row[x + 1]?.continuation) row[x + 1] = emptyCell();
   }
   row[x] = {
     char: ch,
@@ -369,11 +450,7 @@ function putChar(
     continuation: false,
     href: style.href,
   };
-  if (cw === 2 && x + 1 < row.length) {
-    // clear if next was start of wide char
-    if (row[x + 1] && !row[x + 1]!.continuation && dw(row[x + 1]!.char) === 2) {
-      /* ok */
-    }
+  if (cw === 2) {
     row[x + 1] = {
       char: " ",
       fg: style.fg,
@@ -395,15 +472,26 @@ function putText(
   maxW?: number,
 ): number {
   let cx = x;
-  const limit = maxW != null ? x + maxW : Infinity;
+  const limit = maxW != null ? x + Math.max(0, maxW) : Infinity;
   for (const ch of text) {
     const cw = dw(ch);
     if (cx + cw > limit) break;
     if (cx >= (buf[0]?.length ?? 0)) break;
-    putChar(buf, cx, y, ch, style);
+    putChar(buf, cx, y, ch, style, limit);
     cx += cw;
   }
   return cx - x;
+}
+
+/** Clear interior of a box (between borders) so stale cells never bleed. */
+function clearPanelInterior(buf: Cell[][], r: Rect, style: Partial<Cell> = {}): void {
+  if (r.w < 3 || r.h < 3) return;
+  fillRect(
+    buf,
+    { x: r.x + 1, y: r.y + 1, w: Math.max(0, r.w - 2), h: Math.max(0, r.h - 2) },
+    style,
+    " ",
+  );
 }
 
 function fillRect(
@@ -511,7 +599,8 @@ function flushDiff(
         }
         end += dw(c.char) || 1;
       }
-      out += `${ESC}[${y + 1};${x + 1}H`;
+      // Absolute-position every glyph so a single wrong display-width cannot
+      // desync the rest of the line into neighbor panels (CJK overflow).
       let cx = x;
       let openHref: string | undefined;
       while (cx < end && cx < W) {
@@ -520,10 +609,11 @@ function flushDiff(
           cx++;
           continue;
         }
+        out += `${ESC}[${y + 1};${cx + 1}H`;
         const href = c.href;
         if (href !== openHref) {
-          if (openHref) out += `${ESC}]8;;${ESC}\\`; // close previous link
-          if (href) out += `${ESC}]8;;${href}${ESC}\\`; // open link
+          if (openHref) out += `${ESC}]8;;${ESC}\\`;
+          if (href) out += `${ESC}]8;;${href}${ESC}\\`;
           openHref = href;
         }
         const sg = sgr(c);
@@ -531,8 +621,8 @@ function flushDiff(
           out += sg;
           lastSgr = sg;
         }
-        out += c.char;
-        cx += dw(c.char) || 1;
+        out += c.char === "" ? " " : c.char;
+        cx += Math.max(1, dw(c.char) || 1);
       }
       if (openHref) out += `${ESC}]8;;${ESC}\\`;
       x = end;
@@ -1228,33 +1318,57 @@ export function createTui(
     const focused =
       focusPanel === "speakers" &&
       (mode === "speaker-list" || mode === "speaker-rename");
+    // wipe interior first so transcript overflow never lingers here
+    clearPanelInterior(buf, r);
     drawBox(buf, r, t("tui.speakersTitle"), focused ? C.accent : C.border, C.cyan);
     const innerX = r.x + 1;
-    const innerW = r.w - 2;
+    // leave 1 col for ✎ so names never collide with it or the border
+    const innerW = Math.max(1, r.w - 2);
+    const textW = Math.max(1, innerW - 2);
     let y = r.y + 1;
+    const yMax = r.y + r.h - 2; // last interior row
 
-    putText(buf, innerX, y++, truncateDisplay(t("tui.speakersHint1"), innerW), {
-      fg: C.dim,
-      dim: true,
-    });
-    putText(buf, innerX, y++, truncateDisplay(t("tui.speakersHint2"), innerW), {
-      fg: C.dim,
-      dim: true,
-    });
+    putText(
+      buf,
+      innerX,
+      y,
+      truncateDisplay(t("tui.speakersHint1"), innerW),
+      { fg: C.dim, dim: true },
+      innerW,
+    );
+    y++;
+    if (y <= yMax) {
+      putText(
+        buf,
+        innerX,
+        y,
+        truncateDisplay(t("tui.speakersHint2"), innerW),
+        { fg: C.dim, dim: true },
+        innerW,
+      );
+      y++;
+    }
     y++;
 
     const list = speakerList();
-    const visible = Math.max(1, r.y + r.h - 2 - y - 1);
+    const visible = Math.max(1, yMax - y);
     ensureSpeakerVisible(visible);
     const slice = list.slice(speakerScroll, speakerScroll + visible);
 
     if (list.length === 0) {
-      putText(buf, innerX, y, truncateDisplay(t("tui.noSpeakers"), innerW), {
-        fg: C.muted,
-        dim: true,
-      });
+      if (y <= yMax) {
+        putText(
+          buf,
+          innerX,
+          y,
+          truncateDisplay(t("tui.noSpeakers"), innerW),
+          { fg: C.muted, dim: true },
+          innerW,
+        );
+      }
     } else {
       for (let i = 0; i < slice.length; i++) {
+        if (y > yMax) break;
         const sp = slice[i]!;
         const idx = speakerScroll + i;
         const sel = focused && idx === speakerSel;
@@ -1263,35 +1377,47 @@ export function createTui(
           mode === "speaker-rename" && sel
             ? renameDraft + "▌"
             : sp.displayName;
-        const line = `${dot} ${name}`;
+        // name area only — never write into the ✎ column or past panel
+        const line = truncateDisplay(`${dot} ${name}`, textW);
         const style: Partial<Cell> = {
           fg: sel ? C.white : sp.color,
           bold: sel || sp.isActive,
           bg: sel ? C.selectBg : undefined,
         };
-        if (sel) fillRect(buf, { x: innerX, y, w: innerW, h: 1 }, { bg: C.selectBg });
-        putText(buf, innerX, y, truncateDisplay(line, innerW - 2), style);
-        putText(buf, innerX + innerW - 2, y, "✎", {
+        if (sel) {
+          fillRect(buf, { x: innerX, y, w: innerW, h: 1 }, { bg: C.selectBg });
+        }
+        putText(buf, innerX, y, line, style, textW);
+        // pencil sits in the last interior column (before right border)
+        putChar(buf, innerX + innerW - 1, y, "✎", {
           fg: C.dim,
           bg: sel ? C.selectBg : undefined,
-        });
+        }, innerX + innerW);
         y++;
       }
     }
 
     // + add alias hint
     const addY = r.y + r.h - 2;
-    if (addY > y) {
+    if (addY > y && addY <= yMax) {
       putText(
         buf,
         innerX,
         addY,
         truncateDisplay(t("tui.addAlias"), innerW),
         { fg: C.dim, dim: true },
+        innerW,
       );
     }
 
-    // scrollbar
+    // re-assert vertical borders (transcript must never own these cells)
+    const bFg = focused ? C.accent : C.border;
+    for (let by = r.y + 1; by < r.y + r.h - 1; by++) {
+      putChar(buf, r.x, by, "│", { fg: bFg });
+      putChar(buf, r.x + r.w - 1, by, "│", { fg: bFg });
+    }
+
+    // scrollbar on right border column (after border so it stays visible)
     if (list.length > visible) {
       drawScrollbar(buf, r.x + r.w - 1, r.y + 4, visible, list.length, speakerScroll);
     }
@@ -1387,6 +1513,8 @@ export function createTui(
   function renderTranscript(buf: Cell[][], layout: Layout): void {
     const r = layout.transcript;
     const focused = focusPanel === "transcript" && (mode === "normal" || mode === "speaker-list");
+    // wipe interior before paint — kills stale wide-char spill into neighbor panels
+    clearPanelInterior(buf, r);
     drawBox(
       buf,
       r,
@@ -1394,10 +1522,12 @@ export function createTui(
       focused && mode === "normal" ? C.accent : C.border,
       C.cyan,
     );
+    // content lives strictly between borders; leave 1 col padding each side
     const innerX = r.x + 2;
-    const innerW = r.w - 4;
+    const innerW = Math.max(1, r.w - 4);
+    const contentMaxX = innerX + innerW; // exclusive
     const innerY = r.y + 1;
-    const innerH = r.h - 2;
+    const innerH = Math.max(0, r.h - 2);
 
     if (segments.length === 0) {
       const h1 = t("tui.waiting1");
@@ -1407,15 +1537,17 @@ export function createTui(
         buf,
         innerX + Math.max(0, Math.floor((innerW - dw(h1)) / 2)),
         cy,
-        h1,
+        truncateDisplay(h1, innerW),
         { fg: C.muted, dim: true },
+        innerW,
       );
       putText(
         buf,
         innerX + Math.max(0, Math.floor((innerW - dw(h2)) / 2)),
         cy + 2,
-        h2,
+        truncateDisplay(h2, innerW),
         { fg: C.dim, dim: true },
+        innerW,
       );
       return;
     }
@@ -1446,30 +1578,55 @@ export function createTui(
     for (let i = 0; i < slice.length; i++) {
       const row = slice[i]!;
       const y = innerY + i;
+      // clip to panel interior rows only
+      if (y < r.y + 1 || y > r.y + r.h - 2) continue;
+      // hard-truncate again at paint time (defense in depth for CJK)
+      const text = truncateDisplay(row.text, innerW);
       if (row.active) {
-        // left accent bar + soft bg
+        // left accent bar + soft bg (only interior, not borders)
         fillRect(
           buf,
-          { x: r.x + 1, y, w: r.w - 2, h: 1 },
+          { x: r.x + 1, y, w: Math.max(0, r.w - 2), h: 1 },
           { bg: C.activeBg },
         );
-        putChar(buf, r.x + 1, y, "▌", { fg: C.accent, bg: C.activeBg });
-        putText(buf, innerX, y, truncateDisplay(row.text, innerW), {
-          ...row.style,
-          bg: C.activeBg,
-        });
+        putChar(
+          buf,
+          r.x + 1,
+          y,
+          "▌",
+          { fg: C.accent, bg: C.activeBg },
+          contentMaxX,
+        );
+        putText(
+          buf,
+          innerX,
+          y,
+          text,
+          { ...row.style, bg: C.activeBg },
+          innerW,
+        );
       } else {
-        putText(buf, innerX, y, truncateDisplay(row.text, innerW), row.style);
+        putText(buf, innerX, y, text, row.style, innerW);
       }
     }
 
+    // re-draw vertical borders so any accidental spill is painted over
+    for (let y = r.y + 1; y < r.y + r.h - 1; y++) {
+      putChar(buf, r.x, y, "│", { fg: focused && mode === "normal" ? C.accent : C.border });
+      putChar(buf, r.x + r.w - 1, y, "│", {
+        fg: focused && mode === "normal" ? C.accent : C.border,
+      });
+    }
+
     if (maxScroll > 0 && scroll > 0) {
+      const tag = ` ↑${scroll} `;
       putText(
         buf,
-        r.x + r.w - 8,
+        Math.max(r.x + 1, r.x + r.w - 1 - dw(tag)),
         r.y,
-        ` ↑${scroll} `,
+        tag,
         { fg: C.warn },
+        dw(tag),
       );
     }
   }
@@ -1483,86 +1640,132 @@ export function createTui(
     val: string,
     valFg: RGB = C.title,
   ): void {
-    const k = padDisplay(key, 8);
-    putText(buf, x, y, k, { fg: C.dim });
-    putText(buf, x + 9, y, truncateDisplay(val, w - 9), { fg: valFg });
+    const keyW = Math.min(8, Math.max(0, w));
+    const k = padDisplay(key, keyW);
+    putText(buf, x, y, k, { fg: C.dim }, keyW);
+    const valW = Math.max(0, w - keyW - 1);
+    if (valW > 0) {
+      putText(
+        buf,
+        x + keyW + 1,
+        y,
+        truncateDisplay(val, valW),
+        { fg: valFg },
+        valW,
+      );
+    }
   }
 
   function renderSidePanel(buf: Cell[][], layout: Layout): void {
     const r = layout.sidePanel;
     if (!r) return;
+    clearPanelInterior(buf, r);
     drawBox(buf, r, t("tui.sideTitle"), C.border, C.cyan);
     const x = r.x + 2;
-    const w = r.w - 4;
+    const w = Math.max(1, r.w - 4);
     let y = r.y + 2;
+    const yMax = r.y + r.h - 2;
 
     // 7.1 设备与音频
-    putText(buf, x, y++, t("tui.deviceAudio"), { fg: C.cyan, bold: true });
-    kv(buf, x, y++, w, t("tui.source"), sourceDetail(args.source), C.accent);
-    kv(buf, x, y++, w, t("tui.device"), deviceName || t("common.dash"), C.muted);
+    if (y <= yMax) {
+      putText(buf, x, y++, t("tui.deviceAudio"), { fg: C.cyan, bold: true }, w);
+    }
+    if (y <= yMax) kv(buf, x, y++, w, t("tui.source"), sourceDetail(args.source), C.accent);
+    if (y <= yMax) kv(buf, x, y++, w, t("tui.device"), deviceName || t("common.dash"), C.muted);
     // volume placeholder (no real meter in pipeline)
     const volBar = "━━━━━━━";
-    kv(buf, x, y++, w, t("tui.volume"), `${volBar} ${t("common.dash")}`, C.muted);
-    kv(buf, x, y++, w, t("tui.mute"), t("tui.unmuted"), C.ok);
+    if (y <= yMax) kv(buf, x, y++, w, t("tui.volume"), `${volBar} ${t("common.dash")}`, C.muted);
+    if (y <= yMax) kv(buf, x, y++, w, t("tui.mute"), t("tui.unmuted"), C.ok);
     y++;
 
     // 7.2 录音设置
-    putText(buf, x, y++, t("tui.recSettings"), { fg: C.cyan, bold: true });
+    if (y <= yMax) {
+      putText(buf, x, y++, t("tui.recSettings"), { fg: C.cyan, bold: true }, w);
+    }
     const recOn = Boolean(args.record);
     if (recOn && recordStartedAt == null) recordStartedAt = Date.now();
     if (!recOn) recordStartedAt = null;
-    kv(buf, x, y++, w, t("tui.recState"), recOn ? t("tui.recording") : t("tui.notRecording"), recOn ? C.err : C.muted);
-    kv(buf, x, y++, w, t("tui.format"), "WAV", C.muted);
-    kv(
-      buf,
-      x,
-      y++,
-      w,
-      t("tui.savePath"),
-      args.recordDir || defaultRecordDir(),
-      C.muted,
-    );
-    const recDur =
-      recOn && recordStartedAt
-        ? fmtDur((Date.now() - recordStartedAt) / 1000)
-        : "00:00";
-    kv(buf, x, y++, w, t("tui.duration"), recDur, C.muted);
-    const fileName = args.record
-      ? truncateDisplay(args.record.split(/[/\\]/).pop() || args.record, w - 9)
-      : t("common.dash");
-    kv(buf, x, y++, w, t("tui.file"), fileName, C.muted);
-    y++;
-
-    // 7.3 网络共享
-    if (y < r.y + r.h - 2) {
-      putText(buf, x, y++, t("tui.netShare"), { fg: C.cyan, bold: true });
+    if (y <= yMax) {
       kv(
         buf,
         x,
         y++,
         w,
-        t("tui.state"),
-        args.share.enabled ? t("tui.enabled") : t("tui.disabled"),
-        args.share.enabled ? C.ok : C.muted,
+        t("tui.recState"),
+        recOn ? t("tui.recording") : t("tui.notRecording"),
+        recOn ? C.err : C.muted,
       );
-      kv(buf, x, y++, w, t("tui.port"), String(args.share.port), C.muted);
-      kv(buf, x, y++, w, t("tui.address"), args.share.host || "0.0.0.0", C.muted);
-      // Single URL row: display host:port, click opens http://host:port (OSC 8)
-      const fullUrl = shareAccessUrl(args.share.port);
-      const displayUrl = shareAccessHost(args.share.port);
-      const label = padDisplay(t("tui.accessUrl"), 8);
-      putText(buf, x, y, label, { fg: C.dim });
-      putText(
+    }
+    if (y <= yMax) kv(buf, x, y++, w, t("tui.format"), "WAV", C.muted);
+    if (y <= yMax) {
+      kv(
         buf,
-        x + 9,
-        y,
-        truncateDisplay(displayUrl, w - 9),
-        {
-          fg: args.share.enabled ? C.ok : C.dim,
-          href: args.share.enabled ? fullUrl : undefined,
-        },
+        x,
+        y++,
+        w,
+        t("tui.savePath"),
+        args.recordDir || defaultRecordDir(),
+        C.muted,
       );
-      y++;
+    }
+    const recDur =
+      recOn && recordStartedAt
+        ? fmtDur((Date.now() - recordStartedAt) / 1000)
+        : "00:00";
+    if (y <= yMax) kv(buf, x, y++, w, t("tui.duration"), recDur, C.muted);
+    const fileName = args.record
+      ? truncateDisplay(args.record.split(/[/\\]/).pop() || args.record, Math.max(1, w - 9))
+      : t("common.dash");
+    if (y <= yMax) kv(buf, x, y++, w, t("tui.file"), fileName, C.muted);
+    y++;
+
+    // 7.3 网络共享
+    if (y <= yMax) {
+      putText(buf, x, y++, t("tui.netShare"), { fg: C.cyan, bold: true }, w);
+      if (y <= yMax) {
+        kv(
+          buf,
+          x,
+          y++,
+          w,
+          t("tui.state"),
+          args.share.enabled ? t("tui.enabled") : t("tui.disabled"),
+          args.share.enabled ? C.ok : C.muted,
+        );
+      }
+      if (y <= yMax) kv(buf, x, y++, w, t("tui.port"), String(args.share.port), C.muted);
+      if (y <= yMax) {
+        kv(buf, x, y++, w, t("tui.address"), args.share.host || "0.0.0.0", C.muted);
+      }
+      // Single URL row: display host:port, click opens http://host:port (OSC 8)
+      if (y <= yMax) {
+        const fullUrl = shareAccessUrl(args.share.port);
+        const displayUrl = shareAccessHost(args.share.port);
+        const keyW = Math.min(8, w);
+        const label = padDisplay(t("tui.accessUrl"), keyW);
+        putText(buf, x, y, label, { fg: C.dim }, keyW);
+        const valW = Math.max(0, w - keyW - 1);
+        if (valW > 0) {
+          putText(
+            buf,
+            x + keyW + 1,
+            y,
+            truncateDisplay(displayUrl, valW),
+            {
+              fg: args.share.enabled ? C.ok : C.dim,
+              href: args.share.enabled ? fullUrl : undefined,
+            },
+            valW,
+          );
+        }
+        y++;
+      }
+    }
+
+    // re-assert side panel borders after all content
+    for (let by = r.y + 1; by < r.y + r.h - 1; by++) {
+      putChar(buf, r.x, by, "│", { fg: C.border });
+      putChar(buf, r.x + r.w - 1, by, "│", { fg: C.border });
     }
   }
 
@@ -1717,7 +1920,15 @@ export function createTui(
         });
       } else {
         const v = settingValueText(it.key);
-        const text = truncateDisplay(v.text, valMax);
+        const middleKeys = new Set([
+          "aiModel",
+          "aiBase",
+          "recDir",
+          "shareHost",
+        ]);
+        const text = middleKeys.has(it.key)
+          ? truncateMiddleDisplay(v.text, valMax)
+          : truncateDisplay(v.text, valMax);
         if (v.barFg && (text.includes("█") || text.includes("░"))) {
           const m = /^([█░]+)(\s+)(.+)$/.exec(v.text);
           if (m) {
@@ -1826,8 +2037,9 @@ export function createTui(
     const next = createScreenBuffer(W, H);
 
     renderStatusBar(next, layout);
-    if (layout.speakerList) renderSpeakerList(next, layout);
+    // transcript first, then side columns last so any CJK spill is painted over
     renderTranscript(next, layout);
+    if (layout.speakerList) renderSpeakerList(next, layout);
     if (layout.sidePanel) renderSidePanel(next, layout);
     if (layout.messageBar) renderMessageBar(next, layout);
     renderFooter(next, layout);

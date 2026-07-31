@@ -104,9 +104,7 @@ function findRecorderExe(): string {
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
   }
-  throw new Error(
-    "未找到 bionic-audio/recorder.exe（系统声/loopback 需要 Windows 包 bionic-audio）",
-  );
+  throw new Error(t("errors.recorderMissing"));
 }
 
 interface LinearResampler {

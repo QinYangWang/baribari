@@ -63,7 +63,9 @@ import {
   formatSessionRow,
   listSessions,
   loadSession,
+  openSessionWriter,
   type SessionSpeaker,
+  type SessionWriter,
 } from "./session.js";
 import { runResumeTui } from "./resume-tui.js";
 
@@ -117,7 +119,7 @@ function printDevices(): void {
 function printSessionList(): void {
   const list = listSessions();
   if (!list.length) {
-    console.log("No sessions yet. Run a meeting with: baribari");
+    console.log(t("cli.noSessions"));
     return;
   }
   console.log(
@@ -128,20 +130,73 @@ function printSessionList(): void {
     console.log(formatSessionRow(m));
   }
   console.log("");
-  console.log("Resume:  baribari resume <id>");
-  console.log("Delete:  baribari session rm <id>");
-  console.log("Demo:    baribari resume demo");
+  console.log(t("cli.sessionListHintResume"));
+  console.log(t("cli.sessionListHintDelete"));
+  console.log(t("cli.sessionListHintDemo"));
 }
 
 async function runResume(id: string): Promise<void> {
   const data = loadSession(id);
   if (!data) {
-    console.error(`Session not found: ${id}`);
-    console.error("List sessions: baribari session list");
+    console.error(t("cli.sessionNotFound", { id }));
+    console.error(t("cli.listSessionsHint"));
     hardExit(1);
   }
-  await runResumeTui(data);
+  const action = await runResumeTui(data);
+  if (action.type === "continue") {
+    const saved = loadSettings();
+    setUiLang(resolveUiLang({ flag: readUiLangFlag(), saved: saved.uiLang }));
+    const args = buildArgsFromSaved(saved, {
+      // keep prior source/lang when possible
+      source: (data.meta.source as AudioSource | undefined) || undefined,
+      lang: (data.meta.lang as Lang | undefined) || undefined,
+    });
+    const stop = { value: false };
+    const writer = openSessionWriter(action.sessionId, {
+      source: args.source,
+      lang: args.lang,
+    });
+    if (!writer) {
+      console.error(
+        t("cli.cannotContinue", { id: action.sessionId }),
+      );
+      hardExit(1);
+    }
+    // Always record into session audio when continuing
+    args.record = writer.recordPath.replace(/\.wav$/i, "");
+    args.recordDir = writer.dir;
+    await runTui(args, stop, writer);
+    return;
+  }
   hardExit(0);
+}
+
+/** Build TranscribeArgs from saved settings + optional overrides (for continue). */
+function buildArgsFromSaved(
+  saved: ReturnType<typeof loadSettings>,
+  over?: { source?: AudioSource; lang?: Lang },
+): TranscribeArgs {
+  const lang = (over?.lang || saved.lang || "auto") as Lang;
+  const source = (over?.source ||
+    saved.source ||
+    defaultSource()) as AudioSource;
+  return {
+    lang: LANGS.includes(lang) ? lang : "auto",
+    device: saved.device,
+    source: SOURCES.includes(source) ? source : defaultSource(),
+    output: saved.output,
+    noSpk: saved.noSpk ?? false,
+    spkThreshold: saved.spkThreshold ?? 0.55,
+    noTui: false,
+    recordDir: saved.recordDir
+      ? normalizeRecordDir(saved.recordDir)
+      : defaultRecordDir(),
+    paused: { value: false },
+    ai: mergeAi(saved.ai),
+    share: mergeShare(saved.share),
+    vad: mergeVad(saved.vad),
+    uiLang: resolveUiLang({ saved: saved.uiLang }),
+  };
 }
 
 function printDoctor(): void {
@@ -198,7 +253,7 @@ function printDoctor(): void {
   console.log(`  port        ${share.port}`);
   console.log(`  host        ${share.host}`);
   console.log("");
-  console.log("Audio devices");
+  console.log(t("cli.doctorAudioDevices"));
   try {
     const devices = listInputDevices();
     if (!devices.length) console.log("  (none found)");
@@ -208,7 +263,9 @@ function printDoctor(): void {
     console.log(`  error: ${e instanceof Error ? e.message : e}`);
   }
   console.log("");
-  console.log(check.ok ? "Status: ready" : "Status: needs setup");
+  console.log(
+    check.ok ? t("cli.doctorStatusReady") : t("cli.doctorStatusNeedsSetup"),
+  );
   hardExit(check.ok ? 0 : 1);
 }
 
@@ -279,52 +336,58 @@ Register-ArgumentCompleter -Native -CommandName ${name} -ScriptBlock {
 }
 `);
   } else {
-    console.error(`Unknown shell: ${shell}. Use: bash | zsh | fish | powershell`);
+    console.error(t("cli.unknownShell", { shell }));
     hardExit(2);
   }
 }
 
 function addRunOptions(cmd: Command): Command {
   return cmd
-    .option("--lang <lang>", `ASR language: ${LANGS.join("|")}`)
-    .option("--ui-lang <lang>", `UI language: ${UI_LANGS.join("|")}`)
-    .option("--device <id>", "Mic device index or name")
-    .option("--list-devices", "List mic devices and exit")
-    .option("--source <src>", `Audio source: ${SOURCES.join("|")}`)
-    .option("-o, --output <file>", "Append transcript to file")
-    .option("--no-spk", "Disable speaker identification")
-    .option("--spk-threshold <n>", "Speaker match threshold 0–1", (v) =>
-      parseFloat(v),
-    )
-    .option("--no-tui", "Plain-text mode (no fullscreen TUI)")
-    .option("--record <path>", "Start WAV recording on launch")
-    .option("--record-dir <dir>", "Default recording directory")
-    .option("--ai", "Enable AI correct/translate")
-    .option("--no-ai", "Disable AI")
-    .option("--ai-correct", "Enable AI correction")
-    .option("--no-ai-correct", "Disable AI correction")
-    .option("--ai-translate <lang>", "AI translate target (empty disables)")
-    .option("--ai-base-url <url>", "OpenAI-compatible API base URL")
-    .option("--ai-model <id>", "Chat model id")
-    .option("--ai-key <key>", "API key (or BARIBARI_AI_KEY)")
-    .option("--share", "Enable LAN share")
-    .option("--no-share", "Disable LAN share")
-    .option("--share-port <n>", "Share port", (v) => parseInt(v, 10))
-    .option("--join <url>", "Join LAN share (receive only)")
-    .option("--vad-threshold <n>", "VAD threshold 0–1", (v) => parseFloat(v))
-    .option("--vad-min-speech <sec>", "Min speech seconds", (v) => parseFloat(v))
+    .option("--lang <lang>", `${t("cli.lang")}: ${LANGS.join("|")}`)
+    .option("--ui-lang <lang>", t("cli.uiLang"))
+    .option("--device <id>", t("cli.deviceOpt"))
+    .option("--list-devices", t("cli.listDevices"))
+    .option("--source <src>", `${t("cli.sourceOpt")} (${SOURCES.join("|")})`)
+    .option("-o, --output <file>", t("cli.outputOpt"))
+    .option("--no-spk", t("cli.noSpk"))
+    .option("--spk-threshold <n>", t("cli.spkThreshold"), (v) => parseFloat(v))
+    .option("--no-tui", t("cli.noTui"))
+    .option("--record <path>", t("cli.record"))
+    .option("--record-dir <dir>", t("cli.recordDir"))
+    .option("--ai", t("cli.ai"))
+    .option("--no-ai", t("cli.noAi"))
+    .option("--ai-correct", t("cli.aiCorrect"))
+    .option("--no-ai-correct", t("cli.noAiCorrect"))
+    .option("--ai-translate <lang>", t("cli.aiTranslate"))
+    .option("--ai-base-url <url>", t("cli.aiBaseUrl"))
+    .option("--ai-model <id>", t("cli.aiModel"))
+    .option("--ai-key <key>", t("cli.aiKey"))
+    .option("--share", t("cli.share"))
+    .option("--no-share", t("cli.noShare"))
+    .option("--share-port <n>", t("cli.sharePort"), (v) => parseInt(v, 10))
+    .option("--join <url>", t("cli.join"))
+    .option("--vad-threshold <n>", t("cli.vadThreshold"), (v) => parseFloat(v))
     .option(
-      "--vad-min-silence <sec>",
-      "Silence seconds to split",
+      "--vad-min-speech <sec>",
+      t("cli.vadMinSpeech"),
       (v) => parseFloat(v),
     )
-    .option("--vad-max-speech <sec>", "Max segment seconds", (v) => parseFloat(v))
+    .option(
+      "--vad-min-silence <sec>",
+      t("cli.vadMinSilence"),
+      (v) => parseFloat(v),
+    )
+    .option(
+      "--vad-max-speech <sec>",
+      t("cli.vadMaxSpeech"),
+      (v) => parseFloat(v),
+    )
     .option(
       "--vad-window <samples>",
-      "VAD frame samples @16kHz",
+      t("cli.vadWindow"),
       (v) => parseInt(v, 10),
     )
-    .option("--demo", "Demo TUI with fake data");
+    .option("--demo", t("cli.demo"));
 }
 
 async function main() {
@@ -366,32 +429,9 @@ async function main() {
         `Config: ${configDir()}\n` +
         `Docs:   https://github.com/QinYangWang/baribari`,
     )
-    .version(pkg.version, "-V, --version", "Print version number")
-    .helpOption("-h, --help", "Show help")
-    .addHelpText(
-      "after",
-      `
-Examples:
-  $ baribari                          Start live TUI transcription
-  $ baribari setup --download         Download models
-  $ baribari --source loopback        Capture system audio (Windows)
-  $ baribari --ai --ai-translate en   AI enhance + translate to English
-  $ baribari --share                  Broadcast transcript on LAN
-  $ baribari join http://host:8787    Join a shared session
-  $ baribari session list             List saved meetings
-  $ baribari resume demo              Replay built-in demo session
-  $ baribari resume ses_xxx           Replay a saved session
-  $ baribari devices                  List microphones
-  $ baribari doctor                   Health check
-  $ baribari completion bash          Shell completions
-
-Environment:
-  BARIBARI_CONFIG_DIR   Override config directory
-  BARIBARI_UI_LANG      UI language (zh|ja|en)
-  BARIBARI_AI_KEY       OpenAI-compatible API key
-  OPENAI_API_KEY        Fallback API key
-`,
-    )
+    .version(pkg.version, "-V, --version", t("cli.version"))
+    .helpOption("-h, --help", t("cli.help"))
+    .addHelpText("after", t("cli.helpExamples"))
     .showHelpAfterError(true)
     .showSuggestionAfterError(true);
 
@@ -402,13 +442,13 @@ Environment:
 
   program
     .command("setup")
-    .description("Check / download ASR models")
-    .option("-d, --download", "Download missing models")
-    .option("-y, --yes", "Non-interactive yes")
-    .option("--skip-spk", "Skip speaker embedding model")
-    .option("--no-spk", "Alias of --skip-spk")
-    .option("--models-dir <dir>", "Set models directory")
-    .option("--ui-lang <lang>", `UI language: ${UI_LANGS.join("|")}`)
+    .description(t("cli.cmdSetup"))
+    .option("-d, --download", t("cli.setupDownload"))
+    .option("-y, --yes", t("cli.setupYes"))
+    .option("--skip-spk", t("cli.setupSkipSpk"))
+    .option("--no-spk", t("cli.setupNoSpk"))
+    .option("--models-dir <dir>", t("cli.setupModelsDir"))
+    .option("--ui-lang <lang>", t("cli.uiLang"))
     .action(async (opts) => {
       const ok = await runSetup({
         download: !!opts.download,
@@ -423,7 +463,7 @@ Environment:
   program
     .command("paths")
     .alias("config")
-    .description("Print config and model paths")
+    .description(t("cli.cmdPaths"))
     .action(() => {
       printPaths();
       hardExit(0);
@@ -432,7 +472,7 @@ Environment:
   program
     .command("devices")
     .alias("ls-devices")
-    .description("List microphone input devices")
+    .description(t("cli.cmdDevices"))
     .action(() => {
       printDevices();
       hardExit(0);
@@ -440,24 +480,24 @@ Environment:
 
   program
     .command("doctor")
-    .description("Diagnose environment, models, and config")
+    .description(t("cli.cmdDoctor"))
     .action(() => {
       printDoctor();
     });
 
   program
     .command("demo")
-    .description("Open the built-in demo session (same as: resume demo)")
+    .description(t("cli.cmdDemo"))
     .action(async () => {
       await runResume(DEMO_SESSION_ID);
     });
 
   program
     .command("join")
-    .description("Join a LAN share session (receive only)")
-    .argument("<url>", "Share URL, e.g. http://192.168.1.10:8787")
-    .option("--no-tui", "Plain-text mode")
-    .option("-o, --output <file>", "Append transcript to file")
+    .description(t("cli.cmdJoin"))
+    .argument("<url>", t("cli.joinUrl"))
+    .option("--no-tui", t("cli.noTui"))
+    .option("-o, --output <file>", t("cli.outputOpt"))
     .action(async (url: string, opts: { tui?: boolean; output?: string }) => {
       await runJoin(url, {
         noTui: opts.tui === false || !process.stdout.isTTY,
@@ -468,12 +508,12 @@ Environment:
   const sessionCmd = program
     .command("session")
     .alias("sessions")
-    .description("List or delete saved meeting sessions");
+    .description(t("cli.cmdSession"));
 
   sessionCmd
     .command("list")
     .alias("ls")
-    .description("List sessions (default)")
+    .description(t("cli.sessionList"))
     .action(() => {
       printSessionList();
       hardExit(0);
@@ -482,30 +522,30 @@ Environment:
   sessionCmd
     .command("rm")
     .alias("delete")
-    .description("Delete a session by id (not demo)")
-    .argument("<id>", "Session id or prefix")
+    .description(t("cli.sessionRm"))
+    .argument("<id>", t("cli.sessionRmId"))
     .action((id: string) => {
       if (id === "demo" || id === DEMO_SESSION_ID) {
-        console.error("Cannot delete the built-in demo session");
+        console.error(t("cli.cannotDeleteDemo"));
         hardExit(1);
       }
       const ok = deleteSession(id);
       if (!ok) {
-        console.error(`Session not found: ${id}`);
+        console.error(t("cli.sessionNotFound", { id }));
         hardExit(1);
       }
-      console.log(`Deleted ${id}`);
+      console.log(t("cli.deletedSession", { id }));
       hardExit(0);
     });
 
   sessionCmd
     .command("path")
-    .description("Print session directory")
-    .argument("<id>", "Session id")
+    .description(t("cli.sessionPath"))
+    .argument("<id>", t("cli.sessionPathId"))
     .action((id: string) => {
       const s = loadSession(id);
       if (!s) {
-        console.error(`Session not found: ${id}`);
+        console.error(t("cli.sessionNotFound", { id }));
         hardExit(1);
       }
       console.log(s.meta.path);
@@ -520,16 +560,16 @@ Environment:
 
   program
     .command("resume")
-    .description("Replay a saved session (read-only timeline)")
-    .argument("[id]", "Session id / prefix / 'demo'", "demo")
+    .description(t("cli.cmdResume"))
+    .argument("[id]", t("cli.resumeId"), "demo")
     .action(async (id: string) => {
       await runResume(id || "demo");
     });
 
   program
     .command("completion")
-    .description("Generate shell completion script")
-    .argument("[shell]", "bash | zsh | fish | powershell", "bash")
+    .description(t("cli.cmdCompletion"))
+    .argument("[shell]", t("cli.completionShell"), "bash")
     .action((shell: string) => {
       printCompletion(shell);
       hardExit(0);
@@ -832,25 +872,40 @@ function createSegmentPipeline(
   };
 }
 
-async function runTui(args: TranscribeArgs, stop: { value: boolean }) {
+async function runTui(
+  args: TranscribeArgs,
+  stop: { value: boolean },
+  existing?: SessionWriter,
+) {
   let forceTimer: ReturnType<typeof setTimeout> | null = null;
   let pipe: ReturnType<typeof createSegmentPipeline> | null = null;
+  let finalized = false;
 
-  // Auto-create session; optional recording goes into session dir
-  const session = createSessionWriter({
-    source: args.source,
-    lang: args.lang,
-  });
-  // Default record path when user toggles r without --record
-  if (!args.record) {
-    // expose session audio path via recordDir convention: user presses r → use session path
-    args.recordDir = session.dir;
-  } else if (args.record && !args.record.includes(session.id)) {
-    // keep explicit --record path; also copy target into session if relative
-  }
-  // Prefer storing WAV as session/audio.wav when recording is enabled at start
-  if (args.record) {
-    args.record = session.recordPath.replace(/\.wav$/i, "");
+  // New session or continue an existing one
+  const session =
+    existing ||
+    createSessionWriter({
+      source: args.source,
+      lang: args.lang,
+    });
+
+  const safeFinalize = () => {
+    if (finalized) return;
+    finalized = true;
+    try {
+      session.close();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  // Bind recording into session/audio.wav
+  args.recordDir = session.dir;
+  if (args.record || session.continuing) {
+    // continuing always records; new session only if --record / user toggles r
+    if (session.continuing || args.record) {
+      args.record = session.recordPath.replace(/\.wav$/i, "");
+    }
   }
 
   const requestStop = (hard = false) => {
@@ -861,11 +916,7 @@ async function runTui(args: TranscribeArgs, stop: { value: boolean }) {
       } catch {
         /* ignore */
       }
-      try {
-        session.close();
-      } catch {
-        /* ignore */
-      }
+      safeFinalize();
       try {
         tui.close();
       } catch {
@@ -881,11 +932,7 @@ async function runTui(args: TranscribeArgs, stop: { value: boolean }) {
       } catch {
         /* ignore */
       }
-      try {
-        session.close();
-      } catch {
-        /* ignore */
-      }
+      safeFinalize();
       try {
         tui.close();
       } catch {
@@ -895,10 +942,25 @@ async function runTui(args: TranscribeArgs, stop: { value: boolean }) {
     }, 800);
   };
 
+  // Crash / kill safety: flush session meta on unexpected exit
+  const onCrash = () => {
+    safeFinalize();
+  };
+  process.once("uncaughtException", onCrash);
+  process.once("unhandledRejection", onCrash);
+  process.once("beforeExit", onCrash);
+
   const tui = createTui(args, {
     onQuit: () => requestStop(false),
   });
-  tui.setStatus(`Session ${session.id}`);
+  tui.setStatus(
+    session.continuing
+      ? t("resume.continueBanner", {
+          id: session.id,
+          offset: Math.round(session.timeOffset),
+        })
+      : `Session ${session.id}`,
+  );
 
   // When user toggles record on without a path, bind to session audio
   const origRecord = args.record;
@@ -925,8 +987,14 @@ async function runTui(args: TranscribeArgs, stop: { value: boolean }) {
     }
     tui.setStatus(msg);
     if (statusClearTimer) clearTimeout(statusClearTimer);
+    const idleLabel = session.continuing
+      ? t("resume.continueBanner", {
+          id: session.id,
+          offset: Math.round(session.timeOffset),
+        })
+      : `Session ${session.id}`;
     statusClearTimer = setTimeout(() => {
-      tui.setStatus(`Session ${session.id}`);
+      tui.setStatus(idleLabel);
     }, 6000);
     statusClearTimer.unref?.();
   };
@@ -977,14 +1045,7 @@ async function runTui(args: TranscribeArgs, stop: { value: boolean }) {
   } catch {
     /* ignore */
   }
-  try {
-    const meta = session.close();
-    if (meta && exitCode === 0) {
-      // print after TUI closes
-    }
-  } catch {
-    /* ignore */
-  }
+  safeFinalize();
   try {
     flushSaveSettings(() => snapshotFromArgs(args));
   } catch {
@@ -996,8 +1057,15 @@ async function runTui(args: TranscribeArgs, stop: { value: boolean }) {
     /* ignore */
   }
   try {
+    const tag = session.continuing
+      ? t("cli.sessionUpdated")
+      : t("cli.sessionSaved");
     console.log(
-      `Session saved: ${session.id}\n  ${session.dir}\n  Resume: baribari resume ${session.id}`,
+      t("cli.sessionSaveBanner", {
+        tag,
+        id: session.id,
+        dir: session.dir,
+      }),
     );
   } catch {
     /* ignore */

@@ -28,7 +28,7 @@ npm i -g baribari && baribari
 | **本地识别** | SenseVoice + Silero VAD（转写可不依赖云） |
 | **说话人** | 声纹 + 多窗投票，抢话更稳 |
 | **可选 AI** | OpenAI 兼容纠错与翻译 |
-| **会话** | 自动保存字幕；`resume` 时间轴回放（有录音可同步播） |
+| **会话** | 自动保存；`resume` 浏览 · 续录 · AI 翻译/总结 · TUI 内共享 |
 | **局域网共享** | 主机广播，浏览器或 CLI 加入 |
 | **用户目录配置** | `~/.config/baribari` |
 
@@ -103,7 +103,19 @@ baribari resume demo
 baribari resume ses_xxxx
 ```
 
-**回放快捷键（与实时会议不同）：** `←→` 寻道 · `Space` 播放 · `q` 退出。
+**回放快捷键（与实时会议不同）：**
+
+| 键 | 作用 |
+|----|------|
+| `↑` `↓` | 上/下一条字幕（整块对齐底部） |
+| `c` | **续录**到同一会话 |
+| `t` / `T` | 翻译当前条 / **全量**翻译缺失项 |
+| `m` | 会议总结（`summary.md`） |
+| `s` | 设置（界面语言 · 翻译目标 · 模型） |
+| `h` | TUI 内开/关局域网共享（不退出） |
+| `q` | 退出 |
+
+错误（如 429）会以居中弹窗显示，原始错误在嵌套框内。
 
 ### 常用参数
 
@@ -189,10 +201,15 @@ baribari join http://192.168.x.x:8787/
 ## 开发
 
 ```bash
-npm install && npm run typecheck && npm run dev -- --demo
+npm install
+npm run hooks:install    # 提交前 typecheck + check:i18n
+npm run typecheck
+npm run check:i18n       # 三语 locale 键一致
+npm run precommit
+npm run dev -- --demo
 ```
 
-发布：推送与 `package.json` 版本一致的 `v*` tag（GitHub Actions → npm）。
+发布：推送与 `package.json` 版本一致的 `v*` tag（GitHub Actions → npm），或本机 `npm publish`。
 
 ---
 

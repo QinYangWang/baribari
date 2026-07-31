@@ -249,6 +249,68 @@ const zh: MessageTree = {
     uiLang: "界面语言: zh|ja|en",
     setup: "检查 / 安装模型",
     paths: "打印配置与模型路径",
+    help: "显示帮助",
+    version: "打印版本号",
+    helpExamples: `
+示例:
+  $ baribari                          启动实时 TUI 转写
+  $ baribari setup --download         下载模型
+  $ baribari --source loopback        采集系统声 (Windows)
+  $ baribari --ai --ai-translate en   AI 增强并译为英语
+  $ baribari --share                  局域网广播转写
+  $ baribari join http://host:8787    加入共享会话
+  $ baribari session list             列出已保存会议
+  $ baribari resume demo              回放内置演示会话
+  $ baribari resume ses_xxx           回放已保存会话
+  $ baribari devices                  列出麦克风
+  $ baribari doctor                   环境自检
+  $ baribari completion bash          Shell 补全脚本
+
+环境变量:
+  BARIBARI_CONFIG_DIR   覆盖配置目录
+  BARIBARI_UI_LANG      界面语言 (zh|ja|en)
+  BARIBARI_AI_KEY       OpenAI 兼容 API Key
+  OPENAI_API_KEY        备用 API Key
+`,
+    cmdSetup: "检查 / 下载 ASR 模型",
+    setupDownload: "下载缺失模型",
+    setupYes: "非交互确认 yes",
+    setupSkipSpk: "跳过声纹模型",
+    setupNoSpk: "--skip-spk 的别名",
+    setupModelsDir: "指定模型目录",
+    cmdPaths: "打印配置与模型路径",
+    cmdDevices: "列出麦克风输入设备",
+    cmdDoctor: "诊断环境、模型与配置",
+    cmdDemo: "打开内置演示会话（等同: resume demo）",
+    cmdJoin: "加入局域网共享会话（只接收）",
+    joinUrl: "共享 URL，如 http://192.168.1.10:8787",
+    cmdSession: "列出或删除已保存会议会话",
+    sessionList: "列出会话（默认）",
+    sessionRm: "按 id 删除会话（非 demo）",
+    sessionRmId: "会话 id 或前缀",
+    sessionPath: "打印会话目录",
+    sessionPathId: "会话 id",
+    cmdResume: "浏览会话 · c 继续 · h 共享 · q 退出",
+    resumeId: "会话 id / 前缀 / 'demo'",
+    cmdCompletion: "生成 shell 补全脚本",
+    completionShell: "bash | zsh | fish | powershell",
+    sessionNotFound: "找不到会话: {id}",
+    cannotDeleteDemo: "不能删除内置演示会话",
+    deletedSession: "已删除 {id}",
+    listSessionsHint: "列出会话: baribari session list",
+    unknownShell: "未知 shell: {shell}。可选: bash | zsh | fish | powershell",
+    noSessions: "还没有会话。先开一场会议: baribari",
+    sessionListHintResume: "回放:  baribari resume <id>",
+    sessionListHintDelete: "删除:  baribari session rm <id>",
+    sessionListHintDemo: "演示:  baribari resume demo",
+    cannotContinue: "无法续录会话: {id}",
+    doctorAudioDevices: "音频设备",
+    doctorStatusReady: "状态: 就绪",
+    doctorStatusNeedsSetup: "状态: 需要 setup",
+    sessionUpdated: "会话已更新",
+    sessionSaved: "会话已保存",
+    sessionSaveBanner:
+      "{tag}: {id}\n  {dir}\n  回放: baribari resume {id}",
   },
   setup: {
     title: "◆ baribari 模型安装指南",
@@ -314,6 +376,85 @@ const zh: MessageTree = {
   },
   tuiExtra: {
     fullUrl: "完整URL",
+  },
+  resume: {
+    emptySession: "空会话 · c  继续 · h  共享 · q  退出",
+    settingsTitle: "设置",
+    settingsAiTarget: "AI 翻译目标",
+    settingsAiModel: "AI 模型",
+    settingsApi: "API",
+    settingsApiOk: "已配置",
+    settingsApiMissing: "缺 Key",
+    settingsKeys: "↑↓ 选择  ←→ 修改  Esc 关闭",
+    off: "关",
+    summaryTitle: "◆ 会议总结",
+    rawError: "原始错误",
+    dismissHint: "Enter / Esc / 任意键  关闭",
+    termTooSmall: "终端过小 (至少 48×12)",
+    footer: {
+      nav: "上/下一条",
+      continue: "继续",
+      translate: "翻译",
+      translateAll: "全译",
+      summary: "总结",
+      settings: "设置",
+      share: "共享",
+      shareStop: "停享",
+      quit: "退出",
+      na: "—",
+    },
+    status: {
+      translatingOne: "翻译本条…",
+      translatingAll: "全量翻译中…",
+      translateProgress: "全译 {done}/{total}",
+      summarizing: "总结中…",
+      shareStarting: "启动共享…",
+      shareStopped: "已停止共享",
+      translatedOne: "本条已翻译",
+      translatedAll: "已全译 {n} 条",
+      summaryDone: "总结完成 · 再按 m 关闭",
+      demoNoContinue: "演示会话无法续录",
+    },
+    alert: {
+      aiMissingTitle: "AI 未配置",
+      aiMissingBody:
+        "请先配置 API Key / baseUrl / model。\n按 s 打开设置，或编辑 ~/.config/baribari/config.json",
+      noLangTitle: "未指定翻译语言",
+      noLangBody: "请按 s 打开设置，用 ←→ 选择 AI 翻译目标语言。",
+      hint: "提示",
+      noFocus: "没有选中的字幕",
+      alreadyTitle: "已有翻译",
+      alreadyBody: "本条字幕已有翻译，无需重复。\n全量翻译请用 T。",
+      noText: "本条无文本",
+      emptyTransTitle: "翻译结果为空",
+      emptyTransBody: "AI 未返回有效译文，请稍后重试。",
+      noNeedTitle: "无需翻译",
+      noNeedBody: "没有需要翻译的条目（均已有译文或为空）。",
+      shareOnTitle: "局域网共享已开启",
+      shareOnBody:
+        "在浏览器打开：\n{urls}\n\n再按 h 可停止共享（不退出 TUI）。",
+      rateTitle: "请求过于频繁 (429)",
+      rateBody:
+        "AI 接口限流，请稍后再试。\n· 降低批量全译频率\n· 检查配额 / 换模型或 API",
+      authTitle: "鉴权失败 (401)",
+      authBody: "API Key 无效或未配置。\n请在设置 / config 中检查 apiKey、baseUrl。",
+      forbidTitle: "无权访问 (403)",
+      forbidBody: "当前 Key 无权限调用该模型。",
+      serverTitle: "服务端错误",
+      serverBody: "AI 服务暂时异常，请稍后重试。",
+      netTitle: "网络错误",
+      netBody: "无法连接 AI 接口，请检查网络与 baseUrl。",
+      cfgTitle: "配置不完整",
+      errTitle: "出错了",
+      errBody: "操作未能完成，详见下方原始信息。",
+    },
+    ai: {
+      notConfigured: "AI 未配置 API Key / baseUrl / model",
+      noTranslateLang: "请先在设置中指定 AI 翻译目标语言",
+      noSummaryText: "没有可总结的字幕",
+      emptySummary: "AI 返回空总结",
+    },
+    continueBanner: "续录 {id} · +{offset}s",
   },
 };
 

@@ -181,9 +181,10 @@ export function assertModelsExist(
   if (requireSpk && !fs.existsSync(paths.spk)) missing.push(paths.spk);
   if (missing.length) {
     throw new Error(
-      `模型文件缺失:\n${missing.map((m) => `  - ${m}`).join("\n")}\n` +
-        `运行: baribari setup\n` +
-        `配置目录: ${paths.configDir}`,
+      t("errors.modelsMissing", {
+        list: missing.map((m) => `  - ${m}`).join("\n"),
+        dir: paths.configDir,
+      }),
     );
   }
 }

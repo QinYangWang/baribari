@@ -171,12 +171,31 @@ export async function transcribe(
       wavChunks.length = 0;
       return;
     }
-    const samples = concatFloat32(wavChunks);
+    const fresh = concatFloat32(wavChunks);
     wavChunks.length = 0;
     const file = activeRecordPath.endsWith(".wav")
       ? activeRecordPath
       : `${activeRecordPath}.wav`;
     try {
+      let samples = fresh;
+      // Continue-session: append new PCM after existing wav instead of overwrite
+      if (fs.existsSync(file)) {
+        try {
+          const prev = sherpa_onnx.readWave(file) as {
+            samples: Float32Array | number[];
+            sampleRate: number;
+          };
+          if (prev?.samples && prev.samples.length) {
+            const a = Float32Array.from(prev.samples as ArrayLike<number>);
+            const merged = new Float32Array(a.length + fresh.length);
+            merged.set(a, 0);
+            merged.set(fresh, a.length);
+            samples = merged;
+          }
+        } catch {
+          /* if read fails, write fresh only */
+        }
+      }
       try {
         sherpa_onnx.writeWave(file, { samples, sampleRate: SAMPLE_RATE });
       } catch {

@@ -28,7 +28,7 @@ npm i -g baribari && baribari
 | **ローカル ASR** | SenseVoice + Silero VAD（クラウド不要で認識可） |
 | **話者ラベル** | 声紋 + 複数窓投票 |
 | **任意の AI** | OpenAI 互換の校正・翻訳 |
-| **セッション** | 自動保存；`resume` でタイムライン再生（録音があれば同期） |
+| **セッション** | 自動保存；`resume` 閲覧 · 続行録音 · AI 翻訳/要約 · TUI 内共有 |
 | **LAN 共有** | ホストが配信、ブラウザ/CLI で参加 |
 | **ユーザー設定** | `~/.config/baribari` |
 
@@ -95,7 +95,19 @@ baribari session list
 baribari resume demo
 ```
 
-**再生キー（ライブと別）:** `←→` シーク · `Space` 再生 · `q` 終了。
+**再生キー（ライブと別）:**
+
+| キー | 動作 |
+|------|------|
+| `↑` `↓` | 前/次の字幕（ブロックを下端に揃える） |
+| `c` | **同一セッションで続行録音** |
+| `t` / `T` | 現在行を翻訳 / **未翻訳を一括** |
+| `m` | 会議要約（`summary.md`） |
+| `s` | 設定（表示言語 · 翻訳先 · モデル） |
+| `h` | TUI 内で LAN 共有の ON/OFF（終了しない） |
+| `q` | 終了 |
+
+エラー（429 など）は中央ダイアログ＋内側の生エラー枠で表示。
 
 | 主なオプション | 説明 |
 |-----------------|------|
@@ -174,10 +186,15 @@ baribari join http://192.168.x.x:8787/
 ## 開発
 
 ```bash
-npm install && npm run typecheck && npm run dev -- --demo
+npm install
+npm run hooks:install    # pre-commit: typecheck + check:i18n
+npm run typecheck
+npm run check:i18n       # locale キー一致 (zh/ja/en)
+npm run precommit
+npm run dev -- --demo
 ```
 
-公開: `package.json` と同じ `v*` タグを push（Actions → npm）。
+公開: `package.json` と同じ `v*` タグを push（Actions → npm）、または `npm publish`。
 
 ---
 

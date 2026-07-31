@@ -249,6 +249,68 @@ const ja: MessageTree = {
     uiLang: "表示言語: zh|ja|en",
     setup: "モデルの確認 / インストール",
     paths: "設定とモデルパスを表示",
+    help: "ヘルプを表示",
+    version: "バージョンを表示",
+    helpExamples: `
+例:
+  $ baribari                          ライブ TUI 転写を開始
+  $ baribari setup --download         モデルをダウンロード
+  $ baribari --source loopback        システム音声を取得 (Windows)
+  $ baribari --ai --ai-translate en   AI 強化 + 英語へ翻訳
+  $ baribari --share                  LAN で転写を配信
+  $ baribari join http://host:8787    共有セッションに参加
+  $ baribari session list             保存済み会議を一覧
+  $ baribari resume demo              内蔵デモを再生
+  $ baribari resume ses_xxx           保存セッションを再生
+  $ baribari devices                  マイク一覧
+  $ baribari doctor                   環境チェック
+  $ baribari completion bash          シェル補完
+
+環境変数:
+  BARIBARI_CONFIG_DIR   設定ディレクトリを上書き
+  BARIBARI_UI_LANG      表示言語 (zh|ja|en)
+  BARIBARI_AI_KEY       OpenAI 互換 API キー
+  OPENAI_API_KEY        予備 API キー
+`,
+    cmdSetup: "ASR モデルの確認 / ダウンロード",
+    setupDownload: "不足モデルをダウンロード",
+    setupYes: "対話なしで yes",
+    setupSkipSpk: "話者埋め込みモデルをスキップ",
+    setupNoSpk: "--skip-spk の別名",
+    setupModelsDir: "モデルディレクトリを指定",
+    cmdPaths: "設定とモデルパスを表示",
+    cmdDevices: "マイク入力デバイスを一覧",
+    cmdDoctor: "環境・モデル・設定を診断",
+    cmdDemo: "内蔵デモセッションを開く（resume demo と同じ）",
+    cmdJoin: "LAN 共有セッションに参加（受信のみ）",
+    joinUrl: "共有 URL 例: http://192.168.1.10:8787",
+    cmdSession: "保存済み会議セッションの一覧 / 削除",
+    sessionList: "セッション一覧（既定）",
+    sessionRm: "id でセッション削除（demo 以外）",
+    sessionRmId: "セッション id または接頭辞",
+    sessionPath: "セッションディレクトリを表示",
+    sessionPathId: "セッション id",
+    cmdResume: "セッション閲覧 · c 続行 · h 共有 · q 終了",
+    resumeId: "セッション id / 接頭辞 / 'demo'",
+    cmdCompletion: "シェル補完スクリプトを生成",
+    completionShell: "bash | zsh | fish | powershell",
+    sessionNotFound: "セッションが見つかりません: {id}",
+    cannotDeleteDemo: "内蔵デモセッションは削除できません",
+    deletedSession: "{id} を削除しました",
+    listSessionsHint: "一覧: baribari session list",
+    unknownShell: "不明な shell: {shell}。bash | zsh | fish | powershell",
+    noSessions: "セッションがありません。まず baribari で会議を開始",
+    sessionListHintResume: "再生:  baribari resume <id>",
+    sessionListHintDelete: "削除:  baribari session rm <id>",
+    sessionListHintDemo: "デモ:  baribari resume demo",
+    cannotContinue: "セッションを続行できません: {id}",
+    doctorAudioDevices: "オーディオデバイス",
+    doctorStatusReady: "状態: 準備完了",
+    doctorStatusNeedsSetup: "状態: setup が必要",
+    sessionUpdated: "セッション更新",
+    sessionSaved: "セッション保存",
+    sessionSaveBanner:
+      "{tag}: {id}\n  {dir}\n  再生: baribari resume {id}",
   },
   setup: {
     title: "◆ baribari モデル導入ガイド",
@@ -314,6 +376,85 @@ const ja: MessageTree = {
   },
   tuiExtra: {
     fullUrl: "完全URL",
+  },
+  resume: {
+    emptySession: "空のセッション · c  続行 · h  共有 · q  終了",
+    settingsTitle: "設定",
+    settingsAiTarget: "AI 翻訳先",
+    settingsAiModel: "AI モデル",
+    settingsApi: "API",
+    settingsApiOk: "設定済",
+    settingsApiMissing: "Key なし",
+    settingsKeys: "↑↓ 選択  ←→ 変更  Esc 閉じる",
+    off: "オフ",
+    summaryTitle: "◆ 会議サマリー",
+    rawError: "生エラー",
+    dismissHint: "Enter / Esc / 任意キー  閉じる",
+    termTooSmall: "端末が小さすぎます (最小 48×12)",
+    footer: {
+      nav: "前/次",
+      continue: "続行",
+      translate: "翻訳",
+      translateAll: "全訳",
+      summary: "要約",
+      settings: "設定",
+      share: "共有",
+      shareStop: "共有止",
+      quit: "終了",
+      na: "—",
+    },
+    status: {
+      translatingOne: "翻訳中…",
+      translatingAll: "一括翻訳中…",
+      translateProgress: "全訳 {done}/{total}",
+      summarizing: "要約中…",
+      shareStarting: "共有を開始…",
+      shareStopped: "共有を停止しました",
+      translatedOne: "この行を翻訳しました",
+      translatedAll: "{n} 件を翻訳しました",
+      summaryDone: "要約完了 · m で閉じる",
+      demoNoContinue: "デモセッションは続行できません",
+    },
+    alert: {
+      aiMissingTitle: "AI 未設定",
+      aiMissingBody:
+        "先に API Key / baseUrl / model を設定してください。\ns で設定、または ~/.config/baribari/config.json を編集",
+      noLangTitle: "翻訳言語未指定",
+      noLangBody: "s で設定を開き、←→ で翻訳先言語を選んでください。",
+      hint: "お知らせ",
+      noFocus: "選択中の字幕がありません",
+      alreadyTitle: "翻訳済み",
+      alreadyBody: "この字幕は既に翻訳があります。\n未翻訳の一括翻訳は T。",
+      noText: "この行にテキストがありません",
+      emptyTransTitle: "翻訳が空です",
+      emptyTransBody: "AI が有効な訳文を返しませんでした。後でもう一度。",
+      noNeedTitle: "翻訳不要",
+      noNeedBody: "翻訳が必要な項目はありません（済または空）。",
+      shareOnTitle: "LAN 共有を開始しました",
+      shareOnBody:
+        "ブラウザで開く：\n{urls}\n\nh で共有停止（TUI は終了しません）。",
+      rateTitle: "リクエスト過多 (429)",
+      rateBody:
+        "AI API のレート制限です。少し待って再試行。\n· 一括翻訳の頻度を下げる\n· 枠 / モデル / API を確認",
+      authTitle: "認証失敗 (401)",
+      authBody: "API Key が無効または未設定です。\n設定 / config の apiKey・baseUrl を確認。",
+      forbidTitle: "権限なし (403)",
+      forbidBody: "この Key では選択中のモデルを使えません。",
+      serverTitle: "サーバーエラー",
+      serverBody: "AI サービスが一時的に不安定です。後で再試行。",
+      netTitle: "ネットワークエラー",
+      netBody: "AI に接続できません。ネットワークと baseUrl を確認。",
+      cfgTitle: "設定が不完全",
+      errTitle: "エラー",
+      errBody: "操作に失敗しました。下の生エラーを参照。",
+    },
+    ai: {
+      notConfigured: "AI 未設定: API Key / baseUrl / model",
+      noTranslateLang: "先に設定で AI 翻訳先言語を指定してください",
+      noSummaryText: "要約できる字幕がありません",
+      emptySummary: "AI が空の要約を返しました",
+    },
+    continueBanner: "続行 {id} · +{offset}s",
   },
 };
 

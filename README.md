@@ -28,7 +28,7 @@ npm i -g baribari && baribari
 | **Local ASR** | SenseVoice + Silero VAD via sherpa-onnx (no cloud required for speech) |
 | **Speaker labels** | Embedding-based ID with multi-window voting |
 | **Optional AI** | OpenAI-compatible correct + translate |
-| **Sessions** | Auto-saved transcripts; `resume` timeline replay (+ audio if recorded) |
+| **Sessions** | Auto-saved transcripts; `resume` browser · continue recording · AI translate/summary · in-TUI share |
 | **LAN share** | One host broadcasts; others join in the browser or CLI |
 | **Your machine** | Config & models under `~/.config/baribari` |
 
@@ -193,20 +193,23 @@ baribari resume demo               # built-in sample meeting
 baribari resume ses_m5abc          # replay a real session
 ```
 
-### Resume mode (read-only)
+### Resume mode
 
-Different keys from a live meeting:
+Browse a saved meeting, continue recording into the same session, run AI batch tools, or share on LAN — **without leaving the TUI** (except `c` continue, which re-enters live capture).
 
 | Key | Action |
 |-----|--------|
-| `←` `→` | Seek −2s / +2s |
-| `,` `.` | Seek −5s / +5s |
-| `PgUp` `PgDn` | Seek −10s / +10s |
-| `Space` | Play / pause (needs `ffplay` if audio exists) |
-| `g` / `G` | Jump to start / end |
+| `↑` `↓` | Previous / next **segment** (focused block fully visible at bottom) |
+| `g` / `G` | First / last segment |
+| `c` | **Continue recording** into this session (append wav + transcript) |
+| `t` | Translate **current** segment (AI; needs key + translate language) |
+| `T` | Translate **all** segments still missing a translation |
+| `m` | Generate / show meeting **summary** (saved as `summary.md`) |
+| `s` | Settings (UI language · AI translate target · model/API status) |
+| `h` | Toggle **LAN share** in-TUI (does not quit) |
 | `q` | Quit |
 
-Timeline scrubbing shows captions for the current time. If the session has `audio.wav` and `ffplay` is installed, audio seeks with the playhead.
+Progress bar follows the focused (bottom-most fully visible) segment. Errors (e.g. HTTP 429) open a modal dialog with a nested raw-error box.
 
 ---
 
@@ -226,6 +229,7 @@ Timeline scrubbing shows captions for the current time. If the session has `audi
 
 **Layout:** speakers · live transcript · device / record / share  
 **Settings:** recognition, AI (incl. translate target), audio, share, VAD, UI language  
+**Resume settings:** UI language (instant), AI translate target, model (middle-ellipsis for long ids), API status  
 
 ---
 
@@ -344,7 +348,10 @@ Lower silence split (e.g. `0.35`) for snappier captions.
 git clone https://github.com/QinYangWang/baribari.git
 cd baribari
 npm install          # Linux may need: npm install --force
+npm run hooks:install   # pre-commit: typecheck + check:i18n
 npm run typecheck
+npm run check:i18n      # locale key parity (zh/ja/en)
+npm run precommit       # same gate as git pre-commit
 npm run dev -- --demo
 npm run dev -- doctor
 npm run build

@@ -1,0 +1,6 @@
+#!/bin/sh
+# Require typecheck + i18n catalog check before commit.
+# Enable once:  git config core.hooksPath .githooks
+root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 1
+cd "$root" || exit 1
+exec node scripts/pre-commit.mjs
