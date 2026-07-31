@@ -1,0 +1,13 @@
+node_modules/
+dist/
+models/
+recordings/
+out/
+*.wav
+*.pcm
+tmp_*
+baribari.config.json
+.DS_Store
+*.log
+.idea/
+.vscode/
