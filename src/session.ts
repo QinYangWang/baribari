@@ -64,6 +64,28 @@ export interface SessionData {
 function sessionsRoot(): string {
   const dir = path.join(configDir(), "sessions");
   fs.mkdirSync(dir, { recursive: true });
+  return path.resolve(dir);
+}
+
+/** Reject path traversal / absolute paths in session ids. */
+export function isSafeSessionId(id: string): boolean {
+  if (!id || typeof id !== "string") return false;
+  if (id === DEMO_SESSION_ID || id === "demo") return true;
+  // opencode-style tokens + simple names; no slashes, dots-only, or ..
+  if (id.includes("..") || id.includes("/") || id.includes("\\")) return false;
+  if (path.isAbsolute(id)) return false;
+  if (id === "." || id === "..") return false;
+  // allow ses_* and other simple folder names
+  return /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id);
+}
+
+/** Resolve id → absolute dir only if inside sessions root. */
+function resolveSessionDir(id: string): string | null {
+  if (!isSafeSessionId(id)) return null;
+  const root = sessionsRoot();
+  const dir = path.resolve(root, id === "demo" ? DEMO_SESSION_ID : id);
+  const rel = path.relative(root, dir);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
   return dir;
 }
 
@@ -80,10 +102,11 @@ export function defaultSessionName(d = new Date()): string {
 }
 
 export function sessionDir(id: string): string {
-  if (id === DEMO_SESSION_ID) {
-    return path.join(sessionsRoot(), DEMO_SESSION_ID);
+  const dir = resolveSessionDir(id);
+  if (!dir) {
+    throw new Error(`Invalid session id: ${id}`);
   }
-  return path.join(sessionsRoot(), id);
+  return dir;
 }
 
 export function createSession(opts?: {
@@ -287,19 +310,27 @@ export function loadSession(idOrPath: string): SessionData | null {
   if (idOrPath === DEMO_SESSION_ID || idOrPath === "demo") {
     return buildDemoSession();
   }
-  let dir = idOrPath;
-  if (!path.isAbsolute(dir) && !fs.existsSync(dir)) {
-    dir = sessionDir(idOrPath);
+  // Never accept arbitrary filesystem paths — only session ids under sessions/
+  let dir: string | null = null;
+  if (isSafeSessionId(idOrPath)) {
+    dir = resolveSessionDir(idOrPath);
   }
-  // allow prefix match
-  if (!fs.existsSync(dir)) {
+  // prefix / exact name match among known sessions only
+  if (!dir || !fs.existsSync(dir)) {
     const all = listSessions().filter((s) => !s.builtin);
     const hit = all.find(
-      (s) => s.id === idOrPath || s.id.startsWith(idOrPath) || s.name === idOrPath,
+      (s) =>
+        s.id === idOrPath ||
+        s.id.startsWith(idOrPath) ||
+        s.name === idOrPath,
     );
-    if (hit) dir = hit.path;
+    if (hit && hit.path && isPathInsideSessions(hit.path)) {
+      dir = hit.path;
+    } else {
+      dir = null;
+    }
   }
-  if (!fs.existsSync(dir)) return null;
+  if (!dir || !fs.existsSync(dir) || !isPathInsideSessions(dir)) return null;
   const meta = readMetaFile(dir);
   if (!meta) return null;
 
@@ -347,18 +378,24 @@ export function loadSession(idOrPath: string): SessionData | null {
   };
 }
 
+function isPathInsideSessions(dir: string): boolean {
+  const root = sessionsRoot();
+  const resolved = path.resolve(dir);
+  const rel = path.relative(root, resolved);
+  return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
 export function deleteSession(id: string): boolean {
   if (id === DEMO_SESSION_ID || id === "demo") return false;
-  const dir = sessionDir(id);
-  if (!fs.existsSync(dir)) {
-    // prefix
+  let dir: string | null = isSafeSessionId(id) ? resolveSessionDir(id) : null;
+  if (!dir || !fs.existsSync(dir)) {
     const hit = listSessions().find(
       (s) => !s.builtin && (s.id === id || s.id.startsWith(id)),
     );
-    if (!hit) return false;
-    fs.rmSync(hit.path, { recursive: true, force: true });
-    return true;
+    if (!hit || !isPathInsideSessions(hit.path)) return false;
+    dir = hit.path;
   }
+  if (!isPathInsideSessions(dir)) return false;
   fs.rmSync(dir, { recursive: true, force: true });
   return true;
 }
@@ -531,7 +568,7 @@ export function openSessionWriter(
   const data = loadSession(idOrPath);
   if (!data || data.meta.builtin) return null;
   const dir = data.meta.path;
-  if (!fs.existsSync(dir)) return null;
+  if (!fs.existsSync(dir) || !isPathInsideSessions(dir)) return null;
   // refresh duration from disk before offsetting
   const finalized = finalizeSession(dir, {
     source: opts?.source ?? data.meta.source,
@@ -545,6 +582,20 @@ export function openSessionWriter(
     writeMeta(dir, meta);
   }
   const timeOffset = Math.max(0, meta.durationSec || 0);
+  // NOTE: continuing with recording will start a NEW wav at audio.wav
+  // (overwrite). Callers should move previous audio aside if append is needed.
+  const audio = sessionAudioPath(dir);
+  if (fs.existsSync(audio)) {
+    const bak = path.join(
+      dir,
+      `audio-part-${Date.now()}.wav`,
+    );
+    try {
+      fs.renameSync(audio, bak);
+    } catch {
+      /* keep going; new recording may overwrite */
+    }
+  }
   return makeWriter(meta.id, dir, meta, timeOffset, true);
 }
 

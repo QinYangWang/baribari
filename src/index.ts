@@ -162,9 +162,10 @@ async function runResume(id: string): Promise<void> {
       );
       hardExit(1);
     }
-    // Always record into session audio when continuing
-    args.record = writer.recordPath.replace(/\.wav$/i, "");
+    // Continue may record into session/audio.wav (previous wav rotated to audio-part-*.wav)
     args.recordDir = writer.dir;
+    // Don't force-record on continue unless user already had --record; toggle r in TUI
+    args.record = undefined;
     await runTui(args, stop, writer);
     return;
   }
