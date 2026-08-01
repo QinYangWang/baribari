@@ -64,9 +64,11 @@ import {
   listSessions,
   loadSession,
   openSessionWriter,
+  resolveSessionForDelete,
   type SessionSpeaker,
   type SessionWriter,
 } from "./session.js";
+import readline from "node:readline";
 import { runResumeTui } from "./resume-tui.js";
 
 const require = createRequire(import.meta.url);
@@ -114,6 +116,25 @@ function printDevices(): void {
   if (process.platform === "win32") {
     console.log("\n" + t("cli.sourceHint"));
   }
+}
+
+/** Confirm by typing expected string (or y/yes when expected is empty). */
+function confirmPrompt(message: string, expectedId: string): Promise<boolean> {
+  if (!process.stdin.isTTY) {
+    console.error("Refusing to delete without TTY; pass --yes");
+    return Promise.resolve(false);
+  }
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  return new Promise((resolve) => {
+    rl.question(message, (ans) => {
+      rl.close();
+      const a = ans.trim();
+      resolve(a === expectedId);
+    });
+  });
 }
 
 function printSessionList(): void {
@@ -524,18 +545,57 @@ async function main() {
     .command("rm")
     .alias("delete")
     .description(t("cli.sessionRm"))
-    .argument("<id>", t("cli.sessionRmId"))
-    .action((id: string) => {
+    .argument("<id>", "Exact session id (use --allow-prefix for unique prefix)")
+    .option("-y, --yes", "Skip confirmation prompt")
+    .option(
+      "--allow-prefix",
+      "Allow unique id prefix (default: exact id only)",
+    )
+    .action(async (id: string, opts: { yes?: boolean; allowPrefix?: boolean }) => {
       if (id === "demo" || id === DEMO_SESSION_ID) {
         console.error(t("cli.cannotDeleteDemo"));
         hardExit(1);
       }
-      const ok = deleteSession(id);
-      if (!ok) {
+      const resolved = resolveSessionForDelete(id, {
+        allowPrefix: !!opts.allowPrefix,
+      });
+      if (!resolved.ok) {
+        if (resolved.reason === "ambiguous" && resolved.matches?.length) {
+          console.error(`Ambiguous id "${id}". Matches:`);
+          for (const m of resolved.matches) {
+            console.error(`  ${m.id}  ${m.name}`);
+          }
+          console.error("Use the full session id.");
+        } else if (resolved.reason === "need_exact" && resolved.matches?.[0]) {
+          const m = resolved.matches[0];
+          console.error(
+            `Prefix matches ${m.id}. Pass the full id, or: baribari session rm ${id} --allow-prefix`,
+          );
+        } else if (resolved.reason === "demo") {
+          console.error(t("cli.cannotDeleteDemo"));
+        } else {
+          console.error(t("cli.sessionNotFound", { id }));
+        }
+        hardExit(1);
+      }
+
+      if (!opts.yes) {
+        const ok = await confirmPrompt(
+          `Delete session ${resolved.id}?\n  ${resolved.path}\nType the full id to confirm: `,
+          resolved.id,
+        );
+        if (!ok) {
+          console.log("Aborted.");
+          hardExit(1);
+        }
+      }
+
+      const del = deleteSession(resolved.id, { allowPrefix: false });
+      if (!del.ok) {
         console.error(t("cli.sessionNotFound", { id }));
         hardExit(1);
       }
-      console.log(t("cli.deletedSession", { id }));
+      console.log(t("cli.deletedSession", { id: del.id }));
       hardExit(0);
     });
 
@@ -900,13 +960,10 @@ async function runTui(
     }
   };
 
-  // Bind recording into session/audio.wav
+  // Bind recording into session/audio.wav (append on continue via flushWav merge)
   args.recordDir = session.dir;
-  if (args.record || session.continuing) {
-    // continuing always records; new session only if --record / user toggles r
-    if (session.continuing || args.record) {
-      args.record = session.recordPath.replace(/\.wav$/i, "");
-    }
+  if (args.record) {
+    args.record = session.recordPath.replace(/\.wav$/i, "");
   }
 
   const requestStop = (hard = false) => {

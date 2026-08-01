@@ -373,6 +373,12 @@ export type MessageTree = {
     termTooSmall: string;
     footer: {
       nav: string;
+      seek: string;
+      seek5back: string;
+      seek5fwd: string;
+      seek10: string;
+      play: string;
+      jump: string;
       continue: string;
       translate: string;
       translateAll: string;

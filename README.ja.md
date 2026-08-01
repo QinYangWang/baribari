@@ -92,22 +92,35 @@ baribari -h | -V                 ヘルプ / バージョン
 
 ```bash
 baribari session list
+baribari session rm ses_完全なid        # 確認のため id を再入力
+baribari session rm ses_xxx -y
+baribari session rm ses_ab --allow-prefix
 baribari resume demo
+baribari resume ses_xxxx
 ```
 
-**再生キー（ライブと別）:**
+削除は既定で **完全な session id** が必要です。
+
+**再生キー（ライブと別・フッターと一致）:**
 
 | キー | 動作 |
 |------|------|
-| `↑` `↓` | 前/次の字幕（ブロックを下端に揃える） |
-| `c` | **同一セッションで続行録音** |
-| `t` / `T` | 現在行を翻訳 / **未翻訳を一括** |
-| `m` | 会議要約（`summary.md`） |
-| `s` | 設定（表示言語 · 翻訳先 · モデル） |
-| `h` | TUI 内で LAN 共有の ON/OFF（終了しない） |
+| `↑` `↓` | 前/次の字幕（再生位置も移動） |
+| `←` `→` | タイムライン −2s / +2s |
+| `,` `.` | −5s / +5s |
+| `PgUp` `PgDn` | −10s / +10s |
+| `Space` / `p` | 再生/一時停止（音声は `ffplay` 推奨） |
+| `g` / `G` | 先頭 / 末尾 |
+| `c` | **同一セッションで続行**（demo 不可） |
+| `t` / `T` | 現在行を翻訳 / 未翻訳を一括 |
+| `m` | 会議要約 → `summary.md` |
+| `s` | 設定（中: `↑↓` 移動 `←→` 変更 `Esc` 閉じる） |
+| `h` | LAN 共有 ON/OFF（終了しない） |
 | `q` | 終了 |
 
-エラー（429 など）は中央ダイアログ＋内側の生エラー枠で表示。
+ライブ用の `r` 録音・`Tab`・`1–9` は resume では使えません。
+
+`audio-part-*.wav` と `audio.wav` は可能な限り結合。試す: `baribari resume demo`。
 
 | 主なオプション | 説明 |
 |-----------------|------|

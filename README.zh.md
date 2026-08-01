@@ -99,23 +99,35 @@ baribari -h | -V               帮助 / 版本
 
 ```bash
 baribari session list
+baribari session rm ses_完整id           # 再输入完整 id 确认
+baribari session rm ses_xxx -y          # 跳过确认
+baribari session rm ses_ab --allow-prefix
 baribari resume demo
 baribari resume ses_xxxx
 ```
 
-**回放快捷键（与实时会议不同）：**
+删除默认要求 **完整 session id**（需再输入一次确认）。前缀仅在唯一且加 `--allow-prefix` 时可用。
+
+**回放快捷键（与实时会议不同，与 TUI 底栏一致）：**
 
 | 键 | 作用 |
 |----|------|
-| `↑` `↓` | 上/下一条字幕（整块对齐底部） |
-| `c` | **续录**到同一会话 |
-| `t` / `T` | 翻译当前条 / **全量**翻译缺失项 |
-| `m` | 会议总结（`summary.md`） |
-| `s` | 设置（界面语言 · 翻译目标 · 模型） |
-| `h` | TUI 内开/关局域网共享（不退出） |
+| `↑` `↓` | 上/下一条字幕（播放头跟随） |
+| `←` `→` | 时间轴 −2s / +2s |
+| `,` `.` | −5s / +5s |
+| `PgUp` `PgDn` | −10s / +10s |
+| `Space` / `p` | 播放/暂停（音频建议 `ffplay`） |
+| `g` / `G` | 跳到开头 / 结尾 |
+| `c` | **续录**到同一会话（demo 不可） |
+| `t` / `T` | 翻译当前 / 全部缺失 |
+| `m` | 会议总结 → `summary.md` |
+| `s` | 设置（内：`↑↓` 移动 `←→` 改值 `Esc` 关闭） |
+| `h` | 开/关局域网共享（不退出） |
 | `q` | 退出 |
 
-错误（如 429）会以居中弹窗显示，原始错误在嵌套框内。
+实时会议的 `r` 录音、`Tab` 切换区、`1–9` 指派说话人在 resume **不可用**。
+
+多段 `audio-part-*.wav` + `audio.wav` 会尽量合并；续录时 **追加** PCM。本地可试：`baribari resume demo`。
 
 ### 常用参数
 

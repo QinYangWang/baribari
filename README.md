@@ -100,7 +100,7 @@ baribari devices                   List microphones
 baribari doctor                    Diagnose environment
 baribari session list              List saved meetings
 baribari session rm <id>           Delete a session
-baribari resume [id]               Replay a session (default: demo)
+baribari resume [id]               Browse/replay a session (default: demo)
 baribari demo                      Same as: resume demo
 baribari join <url>                Join LAN share (receive only)
 baribari completion [shell]        bash | zsh | fish | powershell
@@ -129,7 +129,7 @@ baribari -h | -V                   Help / version
 | `--share` / `--share-port <n>` | LAN share host |
 | `--join <url>` | Join share (also: `baribari join <url>`) |
 | `--vad-min-silence <sec>` | Silence duration to split segments (lower = snappier) |
-| `--demo` | Demo TUI |
+| `--demo` | Same as `baribari resume demo` (built-in sample session) |
 
 ### Setup
 
@@ -163,6 +163,7 @@ baribari completion powershell | Out-String | Invoke-Expression
 baribari --lang ja --ui-lang en
 baribari --source both -o meeting.txt
 baribari --ai --ai-base-url https://api.openai.com/v1 --ai-translate en
+baribari --share                   # default port 8787
 baribari --share --share-port 8788
 baribari join http://192.168.1.10:8787/
 baribari --vad-min-silence 0.35 --spk-threshold 0.60
@@ -186,30 +187,39 @@ Every live meeting is saved automatically:
 ```
 
 ```bash
-baribari session list              # or: baribari sessions
-baribari session rm ses_m5abc_x1   # delete by id / prefix
-baribari session path ses_m5abc    # print directory
-baribari resume demo               # built-in sample meeting
-baribari resume ses_m5abc          # replay a real session
+baribari session list                 # or: baribari sessions
+baribari session rm ses_full_exact_id # type full id again to confirm
+baribari session rm ses_xxx -y        # skip confirm
+baribari session rm ses_ab --allow-prefix  # unique prefix only
+baribari session path ses_m5abc
+baribari resume demo                  # built-in sample meeting
+baribari resume ses_m5abc             # replay a real session
 ```
+
+Delete requires the **full session id** by default (type it again to confirm). Use `--allow-prefix` only when the prefix is unique; `-y` skips the prompt.
 
 ### Resume mode
 
-Browse a saved meeting, continue recording into the same session, run AI batch tools, or share on LAN — **without leaving the TUI** (except `c` continue, which re-enters live capture).
+Not a live meeting: browse captions on a **timeline**, optionally play audio, continue capture, run AI tools, or share — keys differ from the live TUI.
 
 | Key | Action |
 |-----|--------|
-| `↑` `↓` | Previous / next **segment** (focused block fully visible at bottom) |
-| `g` / `G` | First / last segment |
-| `c` | **Continue recording** into this session (append wav + transcript) |
-| `t` | Translate **current** segment (AI; needs key + translate language) |
-| `T` | Translate **all** segments still missing a translation |
-| `m` | Generate / show meeting **summary** (saved as `summary.md`) |
-| `s` | Settings (UI language · AI translate target · model/API status) |
-| `h` | Toggle **LAN share** in-TUI (does not quit) |
+| `↑` `↓` | Previous / next **segment** (moves playhead to that segment) |
+| `←` `→` | Seek **−2s / +2s** on the timeline |
+| `,` `.` | Seek **−5s / +5s** |
+| `PgUp` `PgDn` | Seek **−10s / +10s** |
+| `Space` or `p` | Play / pause (`ffplay` for audio; else cursor only) |
+| `g` / `G` | Jump to **start / end** |
+| `c` | **Continue** live capture into this session (not demo) |
+| `t` / `T` | Translate **current** / **all missing** (AI) |
+| `m` | Meeting **summary** → `summary.md` |
+| `s` | Settings — inside settings: `↑↓` move, `←→` change, `Esc`/`s` close |
+| `h` | Toggle **LAN share** (does not quit) |
 | `q` | Quit |
 
-Progress bar follows the focused (bottom-most fully visible) segment. Errors (e.g. HTTP 429) open a modal dialog with a nested raw-error box.
+Footer shows the same bindings (two lines). Live meeting keys (`r` record, `Tab` speakers, `1–9` assign) are **not** used in resume.
+
+Audio: `audio-part-*.wav` + `audio.wav` are **merged** when formats match, or chained on one timeline. Continue + record **appends** PCM into `audio.wav` when possible.
 
 ---
 
@@ -217,14 +227,14 @@ Progress bar follows the focused (bottom-most fully visible) segment. Errors (e.
 
 | Key | Action |
 |-----|--------|
-| `p` / `Space` | Pause / resume |
+| `p` / `Space` | Pause / resume listening |
 | `s` | Settings (scrollable groups) |
 | `h` | Toggle LAN share |
-| `r` | Toggle recording |
-| `c` | Clear transcript |
+| `r` | Toggle recording → session `audio.wav` when in a live session |
+| `c` | Clear on-screen transcript (does not delete the session files) |
 | `Tab` | Focus speakers ↔ transcript |
-| `1`–`9` | Assign last segment to speaker |
-| `↑` `↓` | Scroll transcript / settings |
+| `1`–`9` | Assign last segment to speaker *N* (speaker-list focus) |
+| `↑` `↓` | Scroll transcript / move settings |
 | `q` | Quit |
 
 **Layout:** speakers · live transcript · device / record / share  
@@ -334,9 +344,10 @@ Subtitles appear **after VAD ends a speech segment** (not word-by-word streaming
 
 | Setting | Default | Effect |
 |---------|---------|--------|
-| Silence split | 0.6s | Quiet this long → cut & recognize |
-| Max speech | 30s | Force-cut long monologues |
-| Min speech | 0.4s | Drop short noise bursts |
+| Silence split (`--vad-min-silence`) | **0.6s** | Quiet this long → cut & recognize |
+| Max speech (`--vad-max-speech`) | **30s** | Force-cut long monologues |
+| Min speech (`--vad-min-speech`) | **0.4s** | Drop short noise bursts |
+| Speaker threshold (default) | **~0.55** | Higher → fewer speaker splits |
 
 Lower silence split (e.g. `0.35`) for snappier captions.
 

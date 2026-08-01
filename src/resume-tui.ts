@@ -1,17 +1,34 @@
 /**
- * Session resume TUI — browse transcript, continue recording, share, AI translate/summary.
+ * Session resume TUI — browse transcript, timeline seek/play, continue, share, AI.
  *
- * Footer:  ↑↓  上/下一条   c  继续   t  翻译   m  总结   s  设置   h  共享   q  退出
- * Focused segment is fully visible at bottom; progress follows that segment.
+ * Keys (must match footer + onKey):
+ *   ↑↓ / j k     prev/next segment (snaps playhead)
+ *   ←→           seek ±2s
+ *   , .          seek ±5s
+ *   PgUp PgDn    seek ±10s
+ *   Space / p    play/pause
+ *   g / G        start / end
+ *   c            continue live capture (not demo)
+ *   t / T        translate one / all missing
+ *   m            summary
+ *   s            settings (←→ change values; Esc/s close)
+ *   h            LAN share toggle
+ *   q            quit
  */
 
+import { spawn, type ChildProcess } from "node:child_process";
+import fs from "node:fs";
 import type { SessionData, SessionSegment } from "./session.js";
 import {
   canContinueSession,
+  consolidateSessionAudio,
+  listSessionAudioClips,
   loadSessionSummary,
+  resolveAudioAtTime,
   rewriteSessionTranscript,
   saveSessionSummary,
   segmentDisplay,
+  sessionAudioDuration,
 } from "./session.js";
 import type { AiConfig, Segment, TranslateLang } from "./types.js";
 import {
@@ -230,8 +247,23 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
     return { type: "quit" };
   }
 
+  // Merge multi-part wavs when possible for simpler playback
+  if (data.meta.path && data.meta.path !== "(builtin)") {
+    try {
+      consolidateSessionAudio(data.meta.path);
+    } catch {
+      /* ignore */
+    }
+  }
+  const audioDir =
+    data.meta.path && data.meta.path !== "(builtin)" ? data.meta.path : "";
+  const audioClips = audioDir ? listSessionAudioClips(audioDir) : [];
+  const hasAudio = audioClips.length > 0;
+  const audioTotal = audioDir ? sessionAudioDuration(audioDir) : 0;
+
   const total = Math.max(
     data.meta.durationSec || 0,
+    audioTotal,
     ...data.segments.map((s) => s.end || 0),
     1,
   );
@@ -244,6 +276,13 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
 
   let aiCfg: AiConfig = mergeAi(loadSettings().ai);
   let focusSeg = Math.max(0, segments.length - 1);
+  /** Free playhead on meeting timeline (seconds). */
+  let cursor = segments.length
+    ? segments[Math.max(0, segments.length - 1)]!.end || 0
+    : 0;
+  let playing = false;
+  let player: ChildProcess | null = null;
+  let playTimer: ReturnType<typeof setInterval> | null = null;
   let closed = false;
   let lastW = 0;
   let lastH = 0;
@@ -647,7 +686,8 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
 
     const inner = W - 2;
     const headerLines = 5;
-    const footerLines = 3;
+    // title…body + sep + keys line1 + keys line2 + bottom border
+    const footerLines = 4;
     const bodyH = Math.max(3, H - headerLines - footerLines);
     const bodyW = Math.max(10, inner - 2);
 
@@ -660,26 +700,24 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
     const { rows: visual, rowSeg, ranges } = buildVisual(bodyW);
     const viewStart = viewStartForFocus(ranges, bodyH, visual.length);
 
-    let progressT = 0;
-    if (segments[focusSeg]) {
-      const seg = segments[focusSeg]!;
-      progressT = (seg.end > 0 ? seg.end : seg.start) || 0;
-    }
-    if (focusSeg >= segments.length - 1 && segments.length) {
-      const last = segments[segments.length - 1]!;
-      progressT = last.end || last.start;
-    }
+    // Keep focus in sync with playhead when scrubbing/playing
+    const at = segments.findIndex(
+      (s) => s.start <= cursor && cursor < (s.end || s.start + 0.01),
+    );
+    if (at >= 0 && !showSummary) focusSeg = at;
 
+    const progressT = cursor;
     const ts = `${fmtDur(progressT)} / ${fmtDur(total)}`;
     const nSeg = segments.length;
+    const playTag = playing
+      ? "▶"
+      : hasAudio
+        ? "❚❚"
+        : "·";
     const posLabel =
       nSeg <= 1
-        ? "all"
-        : focusSeg <= 0
-          ? "start"
-          : focusSeg >= nSeg - 1
-            ? "end"
-            : `${focusSeg + 1}/${nSeg}`;
+        ? playTag
+        : `${playTag} ${focusSeg + 1}/${nSeg}`;
     const sideBudget = 1 + dw(posLabel) + 2 + 2 + dw(ts);
     const barW = Math.max(8, inner - sideBudget);
     const barPlain = progressBarPlain(progressT, total, barW);
@@ -768,16 +806,24 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
     }
 
     lines.push(`${FG.border}├${"─".repeat(inner)}┤${RESET}`);
-    // Spaced key · label  ·  key · label
+    // Two footer rows — must match onKey() handlers exactly
     const contKey = continuable
       ? kcap("c", t("resume.footer.continue"))
       : `${DIM}${FG.muted}c ${t("resume.footer.na")}${RESET}`;
     const shareKey = shareServer
       ? kcap("h", t("resume.footer.shareStop"))
       : kcap("h", t("resume.footer.share"));
-    const keys =
+    const row1 = [
+      kcap("↑↓", t("resume.footer.nav")),
+      kcap("←→", t("resume.footer.seek")),
+      kcap(",", t("resume.footer.seek5back")),
+      kcap(".", t("resume.footer.seek5fwd")),
+      kcap("PgUp/Dn", t("resume.footer.seek10")),
+      kcap("Space", t("resume.footer.play")),
+      kcap("g/G", t("resume.footer.jump")),
+    ].join("  ");
+    const row2 =
       [
-        kcap("↑↓", t("resume.footer.nav")),
         contKey,
         kcap("t", t("resume.footer.translate")),
         kcap("T", t("resume.footer.translateAll")),
@@ -787,9 +833,17 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
         kcap("q", t("resume.footer.quit")),
       ].join("  ") +
       (statusHint ? `  ${FG.warn}${statusHint}${RESET}` : "") +
-      (busy ? `  ${FG.accent}…${RESET}` : "");
+      (busy ? `  ${FG.accent}…${RESET}` : "") +
+      (hasAudio && audioClips.length > 1
+        ? `  ${FG.muted}${audioClips.length} clips${RESET}`
+        : !hasAudio
+          ? `  ${FG.muted}no audio${RESET}`
+          : "");
     lines.push(
-      `${FG.border}│${RESET} ${pad(keys, bodyW)} ${FG.border}│${RESET}`,
+      `${FG.border}│${RESET} ${pad(row1, bodyW)} ${FG.border}│${RESET}`,
+    );
+    lines.push(
+      `${FG.border}│${RESET} ${pad(row2, bodyW)} ${FG.border}│${RESET}`,
     );
     lines.push(`${FG.border}╰${"─".repeat(inner)}╯${RESET}`);
 
@@ -1117,9 +1171,165 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
     resolveAction = r;
   });
 
+  function stopAudio() {
+    if (playTimer) {
+      clearInterval(playTimer);
+      playTimer = null;
+    }
+    if (player) {
+      try {
+        player.kill("SIGTERM");
+      } catch {
+        /* ignore */
+      }
+      player = null;
+    }
+    playing = false;
+  }
+
+  function which(cmd: string): string | null {
+    const pathEnv = process.env.PATH || "";
+    const sep = process.platform === "win32" ? ";" : ":";
+    for (const dir of pathEnv.split(sep)) {
+      const p = `${dir}${process.platform === "win32" ? "\\" : "/"}${cmd}`;
+      try {
+        if (fs.existsSync(p)) return p;
+      } catch {
+        /* ignore */
+      }
+    }
+    return null;
+  }
+
+  function tryPlayFrom(sec: number) {
+    stopAudio();
+    if (!hasAudio || !audioDir) {
+      // synthetic timeline play without audio
+      playing = true;
+      const t0 = Date.now();
+      const base = sec;
+      playTimer = setInterval(() => {
+        cursor = Math.min(total, base + (Date.now() - t0) / 1000);
+        if (cursor >= total - 0.05) stopAudio();
+        // follow segment under playhead
+        const idx = segments.findIndex(
+          (s) => s.start <= cursor && cursor < (s.end || s.start + 0.01),
+        );
+        if (idx >= 0) focusSeg = idx;
+        paint();
+      }, 200);
+      return;
+    }
+    const hit = resolveAudioAtTime(audioDir, sec);
+    if (!hit) return;
+    const bin = which("ffplay") || which("ffplay.exe");
+    if (!bin) {
+      statusHint = "ffplay not found (audio seek needs ffmpeg)";
+      // still advance cursor synthetically
+      playing = true;
+      const t0 = Date.now();
+      const base = sec;
+      playTimer = setInterval(() => {
+        cursor = Math.min(total, base + (Date.now() - t0) / 1000);
+        if (cursor >= total - 0.05) stopAudio();
+        const idx = segments.findIndex(
+          (s) => s.start <= cursor && cursor < (s.end || s.start + 0.01),
+        );
+        if (idx >= 0) focusSeg = idx;
+        paint();
+      }, 200);
+      paint();
+      return;
+    }
+    player = spawn(
+      bin,
+      [
+        "-nodisp",
+        "-autoexit",
+        "-loglevel",
+        "quiet",
+        "-ss",
+        String(Math.max(0, hit.offsetSec)),
+        hit.path,
+      ],
+      { stdio: "ignore" },
+    );
+    const clipEnd = hit.clip.startSec + hit.clip.durationSec;
+    const t0 = Date.now();
+    const base = sec;
+    playing = true;
+    player.on("exit", () => {
+      player = null;
+      // chain to next clip if still "playing" and timeline remains
+      if (!closed && playing && cursor < total - 0.1) {
+        const next = resolveAudioAtTime(audioDir, cursor + 0.05);
+        if (next && next.path !== hit.path) {
+          tryPlayFrom(cursor);
+          return;
+        }
+      }
+      playing = false;
+      if (playTimer) {
+        clearInterval(playTimer);
+        playTimer = null;
+      }
+      paint();
+    });
+    playTimer = setInterval(() => {
+      cursor = Math.min(total, base + (Date.now() - t0) / 1000);
+      // if we crossed into another clip while ffplay still on old file, restart
+      if (cursor >= clipEnd - 0.05 && cursor < total - 0.05) {
+        tryPlayFrom(cursor);
+        return;
+      }
+      if (cursor >= total - 0.05) stopAudio();
+      const idx = segments.findIndex(
+        (s) => s.start <= cursor && cursor < (s.end || s.start + 0.01),
+      );
+      if (idx >= 0) focusSeg = idx;
+      paint();
+    }, 200);
+  }
+
+  function seek(delta: number) {
+    const was = playing;
+    stopAudio();
+    cursor = Math.min(total, Math.max(0, cursor + delta));
+    const idx = segments.findIndex(
+      (s) => s.start <= cursor && cursor < (s.end || s.start + 0.01),
+    );
+    if (idx >= 0) focusSeg = idx;
+    else if (segments.length) {
+      // nearest
+      let best = 0;
+      let bestD = Infinity;
+      segments.forEach((s, i) => {
+        const d = Math.abs(s.start - cursor);
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+        }
+      });
+      focusSeg = best;
+    }
+    if (was) tryPlayFrom(cursor);
+    paint();
+  }
+
+  function togglePlay() {
+    if (playing) {
+      stopAudio();
+      paint();
+      return;
+    }
+    tryPlayFrom(cursor);
+    paint();
+  }
+
   function finish(action: ResumeAction) {
     if (closed) return;
     closed = true;
+    stopAudio();
     if (keyTimer) clearTimeout(keyTimer);
     // stop in-TUI share when leaving
     if (shareServer) {
@@ -1238,6 +1448,36 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
       void runSummary();
       return;
     }
+    if (key === " " || key === "p") {
+      togglePlay();
+      return;
+    }
+    // Seek on timeline (does not conflict with settings — settings returns early)
+    if (key === "\x1b[C") {
+      seek(2);
+      return;
+    }
+    if (key === "\x1b[D") {
+      seek(-2);
+      return;
+    }
+    if (key === "." || key === ">") {
+      seek(5);
+      return;
+    }
+    if (key === "," || key === "<") {
+      seek(-5);
+      return;
+    }
+    // PgUp / PgDn = larger seek
+    if (key === "\x1b[5~") {
+      seek(-10);
+      return;
+    }
+    if (key === "\x1b[6~") {
+      seek(10);
+      return;
+    }
     if (key === "\x1b[A" || key === "k") {
       moveFocus(-1);
       return;
@@ -1246,21 +1486,17 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
       moveFocus(1);
       return;
     }
-    if (key === "\x1b[5~") {
-      moveFocus(-5);
-      return;
-    }
-    if (key === "\x1b[6~") {
-      moveFocus(5);
-      return;
-    }
     if (key === "g" || key === "\x1b[H" || key === "\x1b[1~") {
+      stopAudio();
+      cursor = 0;
       focusSeg = 0;
       showSummary = false;
       paint();
       return;
     }
     if (key === "G" || key === "\x1b[F" || key === "\x1b[4~") {
+      stopAudio();
+      cursor = total;
       focusSeg = Math.max(0, segments.length - 1);
       showSummary = false;
       paint();
@@ -1270,11 +1506,16 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
 
   function moveFocus(delta: number) {
     if (!segments.length) return;
+    const wasPlaying = playing;
+    stopAudio();
     focusSeg = Math.min(
       segments.length - 1,
       Math.max(0, focusSeg + delta),
     );
+    const seg = segments[focusSeg];
+    if (seg) cursor = seg.start;
     showSummary = false;
+    if (wasPlaying) tryPlayFrom(cursor);
     paint();
   }
 

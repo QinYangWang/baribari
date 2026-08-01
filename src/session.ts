@@ -385,23 +385,292 @@ function isPathInsideSessions(dir: string): boolean {
   return rel !== "" && !rel.startsWith("..") && !path.isAbsolute(rel);
 }
 
-export function deleteSession(id: string): boolean {
-  if (id === DEMO_SESSION_ID || id === "demo") return false;
-  let dir: string | null = isSafeSessionId(id) ? resolveSessionDir(id) : null;
-  if (!dir || !fs.existsSync(dir)) {
-    const hit = listSessions().find(
-      (s) => !s.builtin && (s.id === id || s.id.startsWith(id)),
-    );
-    if (!hit || !isPathInsideSessions(hit.path)) return false;
-    dir = hit.path;
+export type DeleteSessionResult =
+  | { ok: true; id: string; path: string }
+  | {
+      ok: false;
+      reason:
+        | "demo"
+        | "not_found"
+        | "ambiguous"
+        | "need_exact"
+        | "invalid";
+      matches?: SessionMeta[];
+    };
+
+/**
+ * Resolve a user-supplied session id for deletion.
+ * - exact id preferred
+ * - prefix only if unique and opts.allowPrefix
+ */
+export function resolveSessionForDelete(
+  id: string,
+  opts?: { allowPrefix?: boolean },
+): DeleteSessionResult {
+  if (id === DEMO_SESSION_ID || id === "demo") {
+    return { ok: false, reason: "demo" };
   }
-  if (!isPathInsideSessions(dir)) return false;
-  fs.rmSync(dir, { recursive: true, force: true });
-  return true;
+  if (!id || id.includes("..") || id.includes("/") || id.includes("\\")) {
+    return { ok: false, reason: "invalid" };
+  }
+  const all = listSessions().filter((s) => !s.builtin);
+  const exact = all.find((s) => s.id === id);
+  if (exact && isPathInsideSessions(exact.path)) {
+    return { ok: true, id: exact.id, path: exact.path };
+  }
+  const prefixed = all.filter((s) => s.id.startsWith(id));
+  if (prefixed.length > 1) {
+    return { ok: false, reason: "ambiguous", matches: prefixed };
+  }
+  if (prefixed.length === 1 && opts?.allowPrefix) {
+    const hit = prefixed[0]!;
+    if (!isPathInsideSessions(hit.path)) {
+      return { ok: false, reason: "invalid" };
+    }
+    return { ok: true, id: hit.id, path: hit.path };
+  }
+  if (prefixed.length === 1 && !opts?.allowPrefix) {
+    return {
+      ok: false,
+      reason: "need_exact",
+      matches: prefixed,
+    };
+  }
+  return { ok: false, reason: "not_found" };
+}
+
+export function deleteSession(
+  id: string,
+  opts?: { allowPrefix?: boolean },
+): DeleteSessionResult {
+  const resolved = resolveSessionForDelete(id, opts);
+  if (!resolved.ok) return resolved;
+  if (!isPathInsideSessions(resolved.path)) {
+    return { ok: false, reason: "invalid" };
+  }
+  fs.rmSync(resolved.path, { recursive: true, force: true });
+  return resolved;
 }
 
 export function sessionAudioPath(dir: string): string {
   return path.join(dir, "audio.wav");
+}
+
+/** One continuous audio clip on the session timeline. */
+export interface AudioClip {
+  path: string;
+  /** Start on meeting timeline (seconds). */
+  startSec: number;
+  durationSec: number;
+}
+
+/**
+ * List audio pieces for a session in timeline order.
+ * Supports:
+ *   - audio.wav (primary / appended continuum)
+ *   - audio-part-<ts>.wav (legacy rotated parts, chronological by mtime/name)
+ */
+export function listSessionAudioClips(dir: string): AudioClip[] {
+  if (!dir || !fs.existsSync(dir) || dir === "(builtin)") return [];
+  const files: string[] = [];
+  for (const name of fs.readdirSync(dir)) {
+    if (!name.toLowerCase().endsWith(".wav")) continue;
+    if (name === "audio.wav" || /^audio-part-\d+\.wav$/i.test(name)) {
+      files.push(path.join(dir, name));
+    }
+  }
+  if (!files.length) return [];
+
+  // Order: numbered parts by timestamp ascending, then audio.wav last
+  // (when continuing we used to rotate old → part, new → audio.wav)
+  files.sort((a, b) => {
+    const an = path.basename(a);
+    const bn = path.basename(b);
+    const ap = /^audio-part-(\d+)\.wav$/i.exec(an);
+    const bp = /^audio-part-(\d+)\.wav$/i.exec(bn);
+    if (ap && bp) return Number(ap[1]) - Number(bp[1]);
+    if (ap && !bp) return -1;
+    if (!ap && bp) return 1;
+    return an.localeCompare(bn);
+  });
+
+  const clips: AudioClip[] = [];
+  let t = 0;
+  for (const f of files) {
+    const dur = wavDurationSec(f);
+    if (dur <= 0) continue;
+    clips.push({ path: f, startSec: t, durationSec: dur });
+    t += dur;
+  }
+  return clips;
+}
+
+/** Total audio duration across all clips. */
+export function sessionAudioDuration(dir: string): number {
+  return listSessionAudioClips(dir).reduce((s, c) => s + c.durationSec, 0);
+}
+
+/**
+ * Map meeting time → { file, offsetInFile }.
+ * Returns null if no audio at that time.
+ */
+export function resolveAudioAtTime(
+  dir: string,
+  timeSec: number,
+): { path: string; offsetSec: number; clip: AudioClip } | null {
+  const clips = listSessionAudioClips(dir);
+  if (!clips.length) return null;
+  const t = Math.max(0, timeSec);
+  for (const c of clips) {
+    if (t >= c.startSec && t < c.startSec + c.durationSec - 1e-6) {
+      return {
+        path: c.path,
+        offsetSec: t - c.startSec,
+        clip: c,
+      };
+    }
+  }
+  // clamp to last sample
+  const last = clips[clips.length - 1]!;
+  if (t >= last.startSec) {
+    return {
+      path: last.path,
+      offsetSec: Math.min(last.durationSec - 0.05, t - last.startSec),
+      clip: last,
+    };
+  }
+  return {
+    path: clips[0]!.path,
+    offsetSec: 0,
+    clip: clips[0]!,
+  };
+}
+
+/**
+ * Merge audio-part-*.wav + audio.wav into a single audio.wav (in timeline order).
+ * Safe no-op if only one file or none. Returns path of merged file or undefined.
+ */
+export function consolidateSessionAudio(dir: string): string | undefined {
+  const clips = listSessionAudioClips(dir);
+  if (!clips.length) return undefined;
+  if (clips.length === 1 && path.basename(clips[0]!.path) === "audio.wav") {
+    return clips[0]!.path;
+  }
+  // Prefer Node buffer merge via raw PCM read (simple 16-bit mono/stereo WAV)
+  try {
+    const parts: Buffer[] = [];
+    let sampleRate = 0;
+    let channels = 0;
+    let bitDepth = 0;
+    for (const c of clips) {
+      const w = readWavPcm(c.path);
+      if (!w) continue;
+      if (!sampleRate) {
+        sampleRate = w.sampleRate;
+        channels = w.channels;
+        bitDepth = w.bitDepth;
+      }
+      if (
+        w.sampleRate !== sampleRate ||
+        w.channels !== channels ||
+        w.bitDepth !== bitDepth
+      ) {
+        // incompatible — leave files as multi-clip
+        return undefined;
+      }
+      parts.push(w.pcm);
+    }
+    if (!parts.length || !sampleRate) return undefined;
+    const pcm = Buffer.concat(parts);
+    const outPath = sessionAudioPath(dir);
+    writeWavPcm(outPath, pcm, sampleRate, channels, bitDepth);
+    // remove part files after successful merge
+    for (const c of clips) {
+      if (path.basename(c.path) !== "audio.wav") {
+        try {
+          fs.unlinkSync(c.path);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    return outPath;
+  } catch {
+    return undefined;
+  }
+}
+
+interface WavPcm {
+  pcm: Buffer;
+  sampleRate: number;
+  channels: number;
+  bitDepth: number;
+}
+
+function wavDurationSec(file: string): number {
+  const w = readWavPcm(file);
+  if (!w || !w.sampleRate || !w.channels || !w.bitDepth) return 0;
+  const bytesPerSec = (w.sampleRate * w.channels * w.bitDepth) / 8;
+  return bytesPerSec > 0 ? w.pcm.length / bytesPerSec : 0;
+}
+
+/** Minimal WAV reader (PCM only). */
+function readWavPcm(file: string): WavPcm | null {
+  try {
+    const buf = fs.readFileSync(file);
+    if (buf.length < 44) return null;
+    if (buf.toString("ascii", 0, 4) !== "RIFF") return null;
+    if (buf.toString("ascii", 8, 12) !== "WAVE") return null;
+    let offset = 12;
+    let sampleRate = 0;
+    let channels = 0;
+    let bitDepth = 0;
+    let data: Buffer | null = null;
+    while (offset + 8 <= buf.length) {
+      const id = buf.toString("ascii", offset, offset + 4);
+      const size = buf.readUInt32LE(offset + 4);
+      const start = offset + 8;
+      if (id === "fmt ") {
+        channels = buf.readUInt16LE(start + 2);
+        sampleRate = buf.readUInt32LE(start + 4);
+        bitDepth = buf.readUInt16LE(start + 14);
+      } else if (id === "data") {
+        data = buf.subarray(start, start + size);
+        break;
+      }
+      offset = start + size + (size % 2);
+    }
+    if (!data || !sampleRate) return null;
+    return { pcm: Buffer.from(data), sampleRate, channels, bitDepth };
+  } catch {
+    return null;
+  }
+}
+
+function writeWavPcm(
+  file: string,
+  pcm: Buffer,
+  sampleRate: number,
+  channels: number,
+  bitDepth: number,
+): void {
+  const blockAlign = (channels * bitDepth) / 8;
+  const byteRate = sampleRate * blockAlign;
+  const header = Buffer.alloc(44);
+  header.write("RIFF", 0);
+  header.writeUInt32LE(36 + pcm.length, 4);
+  header.write("WAVE", 8);
+  header.write("fmt ", 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitDepth, 34);
+  header.write("data", 36);
+  header.writeUInt32LE(pcm.length, 40);
+  fs.writeFileSync(file, Buffer.concat([header, pcm]));
 }
 
 function getDemoSessionMeta(): SessionMeta {
@@ -581,21 +850,17 @@ export function openSessionWriter(
     meta.updatedAt = new Date().toISOString();
     writeMeta(dir, meta);
   }
-  const timeOffset = Math.max(0, meta.durationSec || 0);
-  // NOTE: continuing with recording will start a NEW wav at audio.wav
-  // (overwrite). Callers should move previous audio aside if append is needed.
-  const audio = sessionAudioPath(dir);
-  if (fs.existsSync(audio)) {
-    const bak = path.join(
-      dir,
-      `audio-part-${Date.now()}.wav`,
-    );
-    try {
-      fs.renameSync(audio, bak);
-    } catch {
-      /* keep going; new recording may overwrite */
-    }
-  }
+  // Prefer a single continuous audio.wav: merge any legacy parts first.
+  consolidateSessionAudio(dir);
+  // Timeline offset from transcript duration (not only audio length)
+  let timeOffset = Math.max(0, meta.durationSec || 0);
+  const audioDur = sessionAudioDuration(dir);
+  // Keep clock monotonic vs existing audio
+  timeOffset = Math.max(timeOffset, audioDur);
+  meta.durationSec = Math.max(meta.durationSec, timeOffset);
+  meta.hasAudio = fs.existsSync(sessionAudioPath(dir)) || listSessionAudioClips(dir).length > 0;
+  writeMeta(dir, meta);
+  // Recording appends into audio.wav (transcribe flushWav merges PCM).
   return makeWriter(meta.id, dir, meta, timeOffset, true);
 }
 
