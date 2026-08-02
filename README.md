@@ -206,18 +206,16 @@ Not a live meeting: browse captions on a **timeline**, optionally play audio, co
 |-----|--------|
 | `↑` `↓` | Previous / next **segment** (moves playhead to that segment) |
 | `←` `→` | Seek **−2s / +2s** on the timeline |
-| `,` `.` | Seek **−5s / +5s** |
-| `PgUp` `PgDn` | Seek **−10s / +10s** |
 | `Space` or `p` | Play / pause (`ffplay` for audio; else cursor only) |
-| `g` / `G` | Jump to **start / end** |
 | `c` | **Continue** live capture into this session (not demo) |
 | `t` / `T` | Translate **current** / **all missing** (AI) |
 | `m` | Meeting **summary** → `summary.md` |
 | `s` | Settings — inside settings: `↑↓` move, `←→` change, `Esc`/`s` close |
+| `e` | Rename session |
 | `h` | Toggle **LAN share** (does not quit) |
 | `q` | Quit |
 
-Footer shows the same bindings (two lines). Live meeting keys (`r` record, `Tab` speakers, `1–9` assign) are **not** used in resume.
+Footer shows the same bindings on one line. Live meeting keys (`r` record, `Tab` speakers, `1–9` assign) are **not** used in resume.
 
 Audio: `audio-part-*.wav` + `audio.wav` are **merged** when formats match, or chained on one timeline. Continue + record **appends** PCM into `audio.wav` when possible.
 
@@ -317,7 +315,28 @@ export BARIBARI_AI_KEY=sk-...
 baribari --ai --ai-translate en --ai-model gpt-4o-mini
 ```
 
-In the TUI: **Settings → AI enhance** — toggle, **translate target**, BASE_URL, API key (masked), model.
+In the TUI: **Settings → AI** — toggle, **translate target**, **Provider** (`←→` presets), BASE_URL, API key (masked), model.
+
+Presets (OpenAI-compatible `chat/completions` — **no extra SDK**):
+
+| Provider | BASE_URL | Example model |
+|----------|----------|----------------|
+| OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
+| **Google Gemini** | `https://generativelanguage.googleapis.com/v1beta/openai` | `gemini-2.0-flash` |
+| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` |
+| Groq | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` |
+| OpenRouter | `https://openrouter.ai/api/v1` | `google/gemini-2.0-flash-001` |
+| Ollama (local) | `http://127.0.0.1:11434/v1` | `qwen2.5:7b` |
+| Custom | edit BASE_URL manually | — |
+
+Gemini: use an **AI Studio API key** as `API Key` / `BARIBARI_AI_KEY` (same as OpenAI-style `Authorization: Bearer`).
+
+```bash
+baribari --ai --ai-translate en \
+  --ai-base-url https://generativelanguage.googleapis.com/v1beta/openai \
+  --ai-model gemini-2.0-flash \
+  --ai-key "$GEMINI_API_KEY"
+```
 
 - **corrected** stays in the source language  
 - **translation** is a separate line (never replaces the original)

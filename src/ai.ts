@@ -4,7 +4,43 @@
  */
 
 import type { AiConfig, Segment, TranslateLang } from "./types.js";
+import {
+  AI_PROVIDER_PRESETS,
+  matchAiProvider,
+  type AiProviderPreset,
+} from "./types.js";
 import { t } from "./i18n/index.js";
+
+export { AI_PROVIDER_PRESETS, matchAiProvider };
+export type { AiProviderPreset };
+
+/** Cycle built-in provider presets; applies baseUrl + default model. */
+export function cycleAiProvider(
+  cfg: AiConfig,
+  dir: 1 | -1,
+): AiConfig {
+  const cur = matchAiProvider(cfg.baseUrl);
+  const list = AI_PROVIDER_PRESETS;
+  const i = Math.max(0, list.findIndex((p) => p.id === cur.id));
+  const next = list[(i + dir + list.length) % list.length]!;
+  if (next.id === "custom") {
+    // Keep current URL/model — user edits manually
+    return { ...cfg, enabled: true };
+  }
+  return {
+    ...cfg,
+    enabled: true,
+    baseUrl: next.baseUrl.replace(/\/+$/, ""),
+    model: next.model || cfg.model,
+  };
+}
+
+export function aiProviderLabel(cfg: AiConfig): string {
+  const p = matchAiProvider(cfg.baseUrl);
+  const key = `settings.provider.${p.id}`;
+  const label = t(key);
+  return label === key ? p.name : label;
+}
 
 const LANG_NAME: Record<string, string> = {
   zh: "Simplified Chinese",

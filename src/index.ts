@@ -1010,6 +1010,12 @@ async function runTui(
 
   const tui = createTui(args, {
     onQuit: () => requestStop(false),
+    sessionDir: session.dir,
+    sessionId: session.id,
+    sessionName: session.meta.name,
+    onSessionRenamed: (name) => {
+      session.meta.name = name;
+    },
   });
   tui.setStatus(
     session.continuing

@@ -4,14 +4,12 @@
  * Keys (must match footer + onKey):
  *   ↑↓ / j k     prev/next segment (snaps playhead)
  *   ←→           seek ±2s
- *   , .          seek ±5s
- *   PgUp PgDn    seek ±10s
  *   Space / p    play/pause
- *   g / G        start / end
  *   c            continue live capture (not demo)
  *   t / T        translate one / all missing
  *   m            summary
  *   s            settings (←→ change values; Esc/s close)
+ *   e            edit session name
  *   h            LAN share toggle
  *   q            quit
  */
@@ -24,6 +22,7 @@ import {
   consolidateSessionAudio,
   listSessionAudioClips,
   loadSessionSummary,
+  renameSession,
   resolveAudioAtTime,
   rewriteSessionTranscript,
   saveSessionSummary,
@@ -287,6 +286,8 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
   let lastW = 0;
   let lastH = 0;
   let statusHint = "";
+  let renaming = false;
+  let renameDraft = "";
   let busy = false;
   let showSettings = false;
   // 0 uiLang · 1 translateTo · 2 model · 3 api status
@@ -687,7 +688,7 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
     const inner = W - 2;
     const headerLines = 5;
     // title…body + sep + keys line1 + keys line2 + bottom border
-    const footerLines = 4;
+    const footerLines = 3;
     const bodyH = Math.max(3, H - headerLines - footerLines);
     const bodyW = Math.max(10, inner - 2);
 
@@ -806,44 +807,37 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
     }
 
     lines.push(`${FG.border}├${"─".repeat(inner)}┤${RESET}`);
-    // Two footer rows — must match onKey() handlers exactly
+    // Single footer row — must match onKey() handlers exactly
     const contKey = continuable
       ? kcap("c", t("resume.footer.continue"))
       : `${DIM}${FG.muted}c ${t("resume.footer.na")}${RESET}`;
     const shareKey = shareServer
       ? kcap("h", t("resume.footer.shareStop"))
       : kcap("h", t("resume.footer.share"));
-    const row1 = [
-      kcap("↑↓", t("resume.footer.nav")),
-      kcap("←→", t("resume.footer.seek")),
-      kcap(",", t("resume.footer.seek5back")),
-      kcap(".", t("resume.footer.seek5fwd")),
-      kcap("PgUp/Dn", t("resume.footer.seek10")),
-      kcap("Space", t("resume.footer.play")),
-      kcap("g/G", t("resume.footer.jump")),
-    ].join("  ");
-    const row2 =
-      [
-        contKey,
-        kcap("t", t("resume.footer.translate")),
-        kcap("T", t("resume.footer.translateAll")),
-        kcap("m", t("resume.footer.summary")),
-        kcap("s", t("resume.footer.settings")),
-        shareKey,
-        kcap("q", t("resume.footer.quit")),
-      ].join("  ") +
-      (statusHint ? `  ${FG.warn}${statusHint}${RESET}` : "") +
-      (busy ? `  ${FG.accent}…${RESET}` : "") +
-      (hasAudio && audioClips.length > 1
-        ? `  ${FG.muted}${audioClips.length} clips${RESET}`
-        : !hasAudio
-          ? `  ${FG.muted}no audio${RESET}`
-          : "");
+    const footer = renaming
+      ? `${FG.accent}${BOLD}${t("resume.renameTitle")}${RESET}  ${FG.title}${renameDraft}▌${RESET}  ${DIM}${FG.muted}${t("resume.renameHint")}${RESET}`
+      : [
+          kcap("↑↓", t("resume.footer.nav")),
+          kcap("←→", t("resume.footer.seek")),
+          kcap("Space", t("resume.footer.play")),
+          contKey,
+          kcap("t", t("resume.footer.translate")),
+          kcap("T", t("resume.footer.translateAll")),
+          kcap("m", t("resume.footer.summary")),
+          kcap("s", t("resume.footer.settings")),
+          kcap("e", t("resume.footer.editName")),
+          shareKey,
+          kcap("q", t("resume.footer.quit")),
+        ].join("  ") +
+        (statusHint ? `  ${FG.warn}${statusHint}${RESET}` : "") +
+        (busy ? `  ${FG.accent}…${RESET}` : "") +
+        (hasAudio && audioClips.length > 1
+          ? `  ${FG.muted}${audioClips.length} clips${RESET}`
+          : !hasAudio
+            ? `  ${FG.muted}no audio${RESET}`
+            : "");
     lines.push(
-      `${FG.border}│${RESET} ${pad(row1, bodyW)} ${FG.border}│${RESET}`,
-    );
-    lines.push(
-      `${FG.border}│${RESET} ${pad(row2, bodyW)} ${FG.border}│${RESET}`,
+      `${FG.border}│${RESET} ${pad(footer, bodyW)} ${FG.border}│${RESET}`,
     );
     lines.push(`${FG.border}╰${"─".repeat(inner)}╯${RESET}`);
 
@@ -1360,6 +1354,46 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
     resolveAction(action);
   }
 
+  function beginRename() {
+    if (data.meta.builtin) {
+      flash(t("resume.status.renameDemo"));
+      return;
+    }
+    if (!data.meta.path || data.meta.path === "(builtin)") {
+      flash(t("resume.status.renameFail"));
+      return;
+    }
+    renaming = true;
+    renameDraft = data.meta.name || "";
+    showSettings = false;
+    showSummary = false;
+    paint();
+  }
+
+  function commitRename() {
+    const next = renameDraft.trim();
+    renaming = false;
+    if (!next) {
+      flash(t("resume.status.renameEmpty"));
+      paint();
+      return;
+    }
+    const meta = renameSession(data.meta.path, next);
+    if (meta) {
+      data.meta.name = meta.name;
+      flash(t("resume.status.renamed", { name: meta.name }));
+    } else {
+      flash(t("resume.status.renameFail"));
+    }
+    paint();
+  }
+
+  function cancelRename() {
+    renaming = false;
+    renameDraft = "";
+    paint();
+  }
+
   function onKey(key: string) {
     // Modal alert takes priority — any key dismisses (except Ctrl+C still quits)
     if (alertDlg) {
@@ -1368,6 +1402,32 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
         return;
       }
       dismissAlert();
+      return;
+    }
+
+    // Session rename input
+    if (renaming) {
+      if (key === "\x1b") {
+        cancelRename();
+        return;
+      }
+      if (key === "\r" || key === "\n") {
+        commitRename();
+        return;
+      }
+      if (key === "\x03") {
+        finish({ type: "quit" });
+        return;
+      }
+      if (key === "\x7f" || key === "\b" || key === "\x08") {
+        renameDraft = renameDraft.slice(0, -1);
+        paint();
+        return;
+      }
+      if (key.length === 1 && key >= " ") {
+        if (renameDraft.length < 80) renameDraft += key;
+        paint();
+      }
       return;
     }
 
@@ -1436,6 +1496,10 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
       paint();
       return;
     }
+    if (key === "e" || key === "E") {
+      beginRename();
+      return;
+    }
     if (key === "t") {
       void runTranslateCurrent();
       return;
@@ -1461,45 +1525,12 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
       seek(-2);
       return;
     }
-    if (key === "." || key === ">") {
-      seek(5);
-      return;
-    }
-    if (key === "," || key === "<") {
-      seek(-5);
-      return;
-    }
-    // PgUp / PgDn = larger seek
-    if (key === "\x1b[5~") {
-      seek(-10);
-      return;
-    }
-    if (key === "\x1b[6~") {
-      seek(10);
-      return;
-    }
     if (key === "\x1b[A" || key === "k") {
       moveFocus(-1);
       return;
     }
     if (key === "\x1b[B" || key === "j") {
       moveFocus(1);
-      return;
-    }
-    if (key === "g" || key === "\x1b[H" || key === "\x1b[1~") {
-      stopAudio();
-      cursor = 0;
-      focusSeg = 0;
-      showSummary = false;
-      paint();
-      return;
-    }
-    if (key === "G" || key === "\x1b[F" || key === "\x1b[4~") {
-      stopAudio();
-      cursor = total;
-      focusSeg = Math.max(0, segments.length - 1);
-      showSummary = false;
-      paint();
       return;
     }
   }
@@ -1547,7 +1578,10 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
         }
         continue;
       }
-      if (b === 0x03 || b >= 0x20 || b === 0x0d) onKey(ch);
+      // include Enter, backspace (0x08/0x7f), printable
+      if (b === 0x03 || b === 0x0d || b === 0x08 || b === 0x7f || b >= 0x20) {
+        onKey(ch);
+      }
     }
   }
 

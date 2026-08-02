@@ -109,6 +109,36 @@ export function sessionDir(id: string): string {
   return dir;
 }
 
+/** Rename a session (updates meta.json name). Returns updated meta or null. */
+export function renameSession(
+  dirOrId: string,
+  name: string,
+): SessionMeta | null {
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  // Reject control chars / path separators that would break display
+  const safe = trimmed
+    .replace(/[\r\n\t]/g, " ")
+    .replace(/[\\/]/g, "-")
+    .slice(0, 120);
+  if (!safe) return null;
+  let dir = dirOrId;
+  if (!fs.existsSync(path.join(dir, "meta.json"))) {
+    try {
+      dir = sessionDir(dirOrId);
+    } catch {
+      return null;
+    }
+  }
+  if (!fs.existsSync(dir) || !isPathInsideSessions(dir)) return null;
+  const meta = readMetaFile(dir);
+  if (!meta || meta.builtin) return null;
+  meta.name = safe;
+  meta.updatedAt = new Date().toISOString();
+  writeMeta(dir, meta);
+  return meta;
+}
+
 export function createSession(opts?: {
   name?: string;
   source?: string;

@@ -161,6 +161,7 @@ export type MessageTree = {
     clear: string;
     switch: string;
     quit: string;
+    editName: string;
     move: string;
     change: string;
     editSave: string;
@@ -191,6 +192,7 @@ export type MessageTree = {
       spkThr: { label: string; help: string };
       aiEn: { label: string; help: string };
       aiTranslate: { label: string; help: string };
+      aiProvider: { label: string; help: string };
       aiBase: { label: string; help: string };
       aiKey: { label: string; help: string };
       aiModel: { label: string; help: string };
@@ -208,6 +210,16 @@ export type MessageTree = {
     };
     keys: string;
     keysEdit: string;
+    provider: {
+      openai: string;
+      gemini: string;
+      deepseek: string;
+      groq: string;
+      openrouter: string;
+      ollama: string;
+      custom: string;
+      applied: string;
+    };
   };
   cli: {
     invalidLang: string;
@@ -374,11 +386,7 @@ export type MessageTree = {
     footer: {
       nav: string;
       seek: string;
-      seek5back: string;
-      seek5fwd: string;
-      seek10: string;
       play: string;
-      jump: string;
       continue: string;
       translate: string;
       translateAll: string;
@@ -386,6 +394,7 @@ export type MessageTree = {
       settings: string;
       share: string;
       shareStop: string;
+      editName: string;
       quit: string;
       na: string;
     };
@@ -400,7 +409,13 @@ export type MessageTree = {
       translatedAll: string;
       summaryDone: string;
       demoNoContinue: string;
+      renamed: string;
+      renameEmpty: string;
+      renameDemo: string;
+      renameFail: string;
     };
+    renameTitle: string;
+    renameHint: string;
     alert: {
       aiMissingTitle: string;
       aiMissingBody: string;

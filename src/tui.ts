@@ -17,6 +17,8 @@ import {
 } from "./settings.js";
 import {
   aiActive,
+  aiProviderLabel,
+  cycleAiProvider,
   resolveApiKey,
   TRANSLATE_OPTIONS,
   translateLangLabel,
@@ -30,6 +32,7 @@ import {
   localeTag,
   type UiLang,
 } from "./i18n/index.js";
+import { renameSession } from "./session.js";
 
 /** Prefer a non-internal IPv4 for LAN share URLs. */
 function lanIPv4(): string[] {
@@ -71,6 +74,7 @@ type UiMode =
   | "normal"
   | "speaker-list"
   | "speaker-rename"
+  | "session-rename"
   | "settings"
   | "settings-edit";
 
@@ -718,7 +722,14 @@ function computeLayout(W: number, H: number, showMessageBar: boolean): Layout {
 
 export function createTui(
   args: TranscribeArgs,
-  opts: { onQuit: () => void },
+  opts: {
+    onQuit: () => void;
+    /** Live session dir for rename (meta.json). */
+    sessionDir?: string;
+    sessionName?: string;
+    sessionId?: string;
+    onSessionRenamed?: (name: string) => void;
+  },
 ): TuiHandle {
   if (args.uiLang) setUiLang(args.uiLang);
   const segments: TranscriptSegment[] = [];
@@ -739,12 +750,16 @@ export function createTui(
   const pendingHold = new Map<string, number>(); // seg id → show spinner until
   const startedAt = Date.now();
   let recordStartedAt: number | null = null;
+  let sessionName = (opts.sessionName || "").trim();
+  const sessionDir = opts.sessionDir;
+  const sessionId = opts.sessionId || "";
 
   let mode: UiMode = "normal";
   let focusPanel: "transcript" | "speakers" | "side" = "transcript";
   let speakerSel = 0;
   let speakerScroll = 0;
   let renameDraft = "";
+  let sessionRenameDraft = "";
 
   let settingsFocus = 0;
   let settingsScroll = 0;
@@ -836,6 +851,7 @@ export function createTui(
     | "spkThr"
     | "aiEn"
     | "aiTranslate"
+    | "aiProvider"
     | "aiBase"
     | "aiKey"
     | "aiModel"
@@ -888,6 +904,12 @@ export function createTui(
       key: "aiTranslate",
       label: t("settings.items.aiTranslate.label"),
       help: t("settings.items.aiTranslate.help"),
+      group: t("settings.groups.ai"),
+    },
+    {
+      key: "aiProvider",
+      label: t("settings.items.aiProvider.label"),
+      help: t("settings.items.aiProvider.help"),
       group: t("settings.groups.ai"),
     },
     {
@@ -1061,6 +1083,12 @@ export function createTui(
           dim: aiOff || !args.ai.translateTo,
         };
       }
+      case "aiProvider":
+        return {
+          text: aiProviderLabel(args.ai),
+          fg: aiOff ? C.dim : C.accent,
+          dim: aiOff,
+        };
       case "aiBase":
         return {
           text: args.ai.baseUrl || t("common.empty"),
@@ -1194,10 +1222,30 @@ export function createTui(
     const spkN = speakers.size;
     const segN = segments.length;
 
+    const namePart =
+      mode === "session-rename"
+        ? `${t("resume.renameTitle")}: ${sessionRenameDraft}▌`
+        : sessionName
+          ? truncateDisplay(sessionName, 28)
+          : sessionId
+            ? sessionId
+            : "";
     const parts: { t: string; fg: RGB; bold?: boolean }[] = [
       { t: t("tui.brand"), fg: C.accent, bold: true },
       { t: " ", fg: C.muted },
       { t: listen, fg: listenFg, bold: true },
+    ];
+    if (namePart) {
+      parts.push(
+        { t: " │ ", fg: C.border },
+        {
+          t: namePart,
+          fg: mode === "session-rename" ? C.accent : C.title,
+          bold: mode === "session-rename",
+        },
+      );
+    }
+    parts.push(
       { t: " │ ", fg: C.border },
       { t: `${t("tui.source")} ${sourceLabel(args.source)}`, fg: C.muted },
       { t: " │ ", fg: C.border },
@@ -1217,7 +1265,7 @@ export function createTui(
       { t: t("tui.segs", { n: segN }), fg: C.muted },
       { t: " │ ", fg: C.border },
       { t: elapsed, fg: C.muted },
-    ];
+    );
 
     let x = r.x + 1;
     const maxX = r.x + r.w - 1;
@@ -1790,7 +1838,7 @@ export function createTui(
           { k: "Esc", v: t("footer.close") },
         ];
       }
-    } else if (mode === "speaker-rename") {
+    } else if (mode === "speaker-rename" || mode === "session-rename") {
       hints = [
         { k: "Enter", v: t("footer.confirm") },
         { k: "Esc", v: t("footer.cancel") },
@@ -1811,6 +1859,7 @@ export function createTui(
         { k: "h", v: t("footer.share") },
         { k: "r", v: t("footer.record") },
         { k: "c", v: t("footer.clear") },
+        { k: "e", v: t("footer.editName") },
         { k: "Tab", v: t("footer.switch") },
         { k: "q", v: t("footer.quit") },
       ];
@@ -2333,6 +2382,15 @@ export function createTui(
       case "aiTranslate":
         cycleAiTranslate(dir);
         break;
+      case "aiProvider": {
+        args.ai = cycleAiProvider(args.ai, dir);
+        status = t("settings.provider.applied", {
+          name: aiProviderLabel(args.ai),
+          model: args.ai.model || "—",
+        });
+        persist();
+        break;
+      }
       case "source":
         cycleSource(dir);
         break;
@@ -2382,6 +2440,15 @@ export function createTui(
       case "aiTranslate":
         cycleAiTranslate(1);
         break;
+      case "aiProvider": {
+        args.ai = cycleAiProvider(args.ai, 1);
+        status = t("settings.provider.applied", {
+          name: aiProviderLabel(args.ai),
+          model: args.ai.model || "—",
+        });
+        persist();
+        break;
+      }
       case "record":
         toggleRecord();
         break;
@@ -2422,6 +2489,45 @@ export function createTui(
     mode = "speaker-list";
     focusPanel = "speakers";
     status = t("status.speakerAdded");
+  }
+
+  function beginRenameSession(): void {
+    if (!sessionDir) {
+      status = t("resume.status.renameFail");
+      return;
+    }
+    sessionRenameDraft = sessionName || sessionId || "";
+    mode = "session-rename";
+  }
+
+  function commitRenameSession(): void {
+    if (!sessionDir) {
+      mode = "normal";
+      sessionRenameDraft = "";
+      return;
+    }
+    const next = sessionRenameDraft.trim();
+    if (!next) {
+      status = t("resume.status.renameEmpty");
+      mode = "normal";
+      sessionRenameDraft = "";
+      return;
+    }
+    const meta = renameSession(sessionDir, next);
+    if (meta) {
+      sessionName = meta.name;
+      status = t("resume.status.renamed", { name: meta.name });
+      opts.onSessionRenamed?.(meta.name);
+    } else {
+      status = t("resume.status.renameFail");
+    }
+    mode = "normal";
+    sessionRenameDraft = "";
+  }
+
+  function cancelRenameSession(): void {
+    sessionRenameDraft = "";
+    mode = "normal";
   }
 
   function beginRenameSpeaker(): void {
@@ -2554,6 +2660,30 @@ export function createTui(
       return;
     }
 
+    // session name rename
+    if (mode === "session-rename") {
+      if (key === "\x1b") {
+        cancelRenameSession();
+        dirty = true;
+        return;
+      }
+      if (key === "\r" || key === "\n") {
+        commitRenameSession();
+        dirty = true;
+        return;
+      }
+      if (key === "\x7f" || key === "\b" || key === "\x08") {
+        sessionRenameDraft = sessionRenameDraft.slice(0, -1);
+        dirty = true;
+        return;
+      }
+      if (key.length === 1 && key >= " ") {
+        if (sessionRenameDraft.length < 80) sessionRenameDraft += key;
+        dirty = true;
+      }
+      return;
+    }
+
     // quit — not while text editing (handled above)
     if (key === "q" || key === "Q" || key === "\x03" || key === "\x04") {
       if (mode === "settings") {
@@ -2679,6 +2809,11 @@ export function createTui(
     }
     if (key === "s" || key === "S") {
       mode = "settings";
+      dirty = true;
+      return;
+    }
+    if (key === "e" || key === "E") {
+      beginRenameSession();
       dirty = true;
       return;
     }

@@ -37,6 +37,94 @@ export interface AiConfig {
   model: string;
 }
 
+/**
+ * Built-in OpenAI-compatible providers (←→ in settings).
+ * Gemini uses Google's official OpenAI-compat endpoint — no extra SDK required.
+ */
+export interface AiProviderPreset {
+  id: string;
+  /** Display name (English; UI may i18n by id). */
+  name: string;
+  baseUrl: string;
+  /** Suggested default model for this endpoint. */
+  model: string;
+  /** Optional hint for key env / console. */
+  keyHint?: string;
+}
+
+export const AI_PROVIDER_PRESETS: AiProviderPreset[] = [
+  {
+    id: "openai",
+    name: "OpenAI",
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-4o-mini",
+    keyHint: "OPENAI_API_KEY / BARIBARI_AI_KEY",
+  },
+  {
+    id: "gemini",
+    name: "Google Gemini",
+    // Official OpenAI-compatible API (AI Studio / Gemini API key)
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+    model: "gemini-2.0-flash",
+    keyHint: "Google AI Studio API key",
+  },
+  {
+    id: "deepseek",
+    name: "DeepSeek",
+    baseUrl: "https://api.deepseek.com/v1",
+    model: "deepseek-chat",
+    keyHint: "DeepSeek API key",
+  },
+  {
+    id: "groq",
+    name: "Groq",
+    baseUrl: "https://api.groq.com/openai/v1",
+    model: "llama-3.3-70b-versatile",
+    keyHint: "Groq API key",
+  },
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    model: "google/gemini-2.0-flash-001",
+    keyHint: "OpenRouter API key",
+  },
+  {
+    id: "ollama",
+    name: "Ollama (local)",
+    baseUrl: "http://127.0.0.1:11434/v1",
+    model: "qwen2.5:7b",
+    keyHint: "any non-empty key if required (e.g. ollama)",
+  },
+  {
+    id: "custom",
+    name: "Custom",
+    baseUrl: "",
+    model: "",
+    keyHint: "Edit BASE_URL + model manually",
+  },
+];
+
+/** Match preset by baseUrl (host); falls back to custom. */
+export function matchAiProvider(baseUrl: string): AiProviderPreset {
+  const n = (baseUrl || "").replace(/\/+$/, "").toLowerCase();
+  if (!n) return AI_PROVIDER_PRESETS.find((p) => p.id === "custom")!;
+  for (const p of AI_PROVIDER_PRESETS) {
+    if (p.id === "custom" || !p.baseUrl) continue;
+    const pb = p.baseUrl.replace(/\/+$/, "").toLowerCase();
+    if (n === pb || n.startsWith(pb + "/") || pb.startsWith(n)) return p;
+    // host-only match
+    try {
+      const h1 = new URL(n.includes("://") ? n : `https://${n}`).host;
+      const h2 = new URL(pb).host;
+      if (h1 && h1 === h2) return p;
+    } catch {
+      /* ignore */
+    }
+  }
+  return AI_PROVIDER_PRESETS.find((p) => p.id === "custom")!;
+}
+
 export interface ShareConfig {
   /** Host: broadcast segments on LAN. */
   enabled: boolean;
