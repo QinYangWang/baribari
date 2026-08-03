@@ -2,6 +2,9 @@
  * Speaker ID via embedding centroids (cosine + EMA).
  * Multi-window voting + energy-focused windows to reduce errors when
  * speakers barge in / overlap within one VAD segment.
+ *
+ * Global roster: fixed attendees are seeded first (indices 0..G-1 → spk 1..G).
+ * Session-only speakers enroll after that. Display names for globals come from roster.
  */
 
 import type { TranscribeArgs } from "./types.js";
@@ -16,6 +19,14 @@ export interface SpeakerEmbeddingExtractor {
 
 export interface SpeakerStream {
   acceptWaveform(opts: { sampleRate: number; samples: Float32Array }): void;
+}
+
+/** Seed from ~/.config/baribari/speakers/roster.json */
+export interface GlobalSpeakerSeed {
+  id: string;
+  displayName: string;
+  embedding: number[] | Float32Array;
+  count?: number;
 }
 
 /** Min audio length for a reliable embedding window (~0.6s). */
@@ -34,7 +45,11 @@ const MIN_RMS = 0.008;
 export class SherpaSpeakerTracker {
   private centroids: Float32Array[] = [];
   private counts: number[] = []; // enrollment weight per speaker
+  private names: string[] = []; // display name per index
+  private globalIds: (string | null)[] = []; // roster id or null if session-only
+  private globalFlags: boolean[] = []; // true = fixed global attendee
   private ema: number;
+  private dirtyGlobal = false;
 
   constructor(
     private extractor: SpeakerEmbeddingExtractor,
@@ -42,6 +57,25 @@ export class SherpaSpeakerTracker {
     ema = 0.25,
   ) {
     this.ema = ema;
+  }
+
+  /**
+   * Load fixed attendees as the first centroids (spk 1..N).
+   * Call once before any assign().
+   */
+  seedGlobal(seeds: GlobalSpeakerSeed[]): void {
+    if (this.centroids.length) {
+      throw new Error("seedGlobal must be called before any assign()");
+    }
+    for (const s of seeds) {
+      if (!s.embedding || s.embedding.length < 8) continue;
+      const emb = l2Normalize(Float32Array.from(s.embedding));
+      this.centroids.push(emb);
+      this.counts.push(Math.max(1, s.count ?? 1));
+      this.names.push((s.displayName || "").trim() || s.id);
+      this.globalIds.push(s.id);
+      this.globalFlags.push(true);
+    }
   }
 
   embed(audio: Float32Array): Float32Array {
@@ -61,12 +95,10 @@ export class SherpaSpeakerTracker {
 
     const windows = pickWindows(audio);
     if (!windows.length) {
-      // fallback: whole clip
       return this.assignEmbedding(this.embed(audio), /*allowUpdate*/ true);
     }
 
-    // Score each window; collect votes weighted by RMS * confidence margin
-    const votes = new Map<number, number>(); // speakerId(1-based) → weight
+    const votes = new Map<number, number>();
     let bestGlobal: { id: number; sim: number; emb: Float32Array } | null =
       null;
 
@@ -74,13 +106,8 @@ export class SherpaSpeakerTracker {
       const emb = this.embed(w.samples);
       const match = this.matchEmbedding(emb);
       if (!match) {
-        // new speaker candidate from this window
-        // defer creating until we see if others agree
-        const key = -1; // provisional "new"
+        const key = -1;
         votes.set(key, (votes.get(key) || 0) + w.rms * 0.5);
-        if (!bestGlobal || match == null) {
-          /* keep scanning */
-        }
         continue;
       }
       const { id, sim, second } = match;
@@ -93,13 +120,11 @@ export class SherpaSpeakerTracker {
       }
     }
 
-    // If no centroid matched any window, enroll from loudest window
     if (!bestGlobal || (votes.size === 1 && votes.has(-1))) {
       const loudest = windows.reduce((a, b) => (a.rms >= b.rms ? a : b));
       return this.assignEmbedding(this.embed(loudest.samples), true);
     }
 
-    // Pick speaker with highest vote weight
     let winId = bestGlobal.id;
     let winW = -1;
     for (const [id, w] of votes) {
@@ -110,8 +135,6 @@ export class SherpaSpeakerTracker {
       }
     }
 
-    // EMA update only from the best single-window embedding for that speaker
-    // and only if confident (avoid polluting centroid with overlap)
     if (
       bestGlobal.id === winId &&
       bestGlobal.sim >= Math.max(this.args.spkThreshold, UPDATE_MIN_SIM)
@@ -120,6 +143,121 @@ export class SherpaSpeakerTracker {
     }
 
     return winId;
+  }
+
+  /** Display name for 1-based spk (global roster name or Speaker N). */
+  getDisplayName(spk: number): string {
+    const i = spk - 1;
+    if (i < 0 || i >= this.names.length) return `Speaker ${spk}`;
+    return this.names[i] || `Speaker ${spk}`;
+  }
+
+  getGlobalId(spk: number): string | null {
+    const i = spk - 1;
+    if (i < 0 || i >= this.globalIds.length) return null;
+    return this.globalIds[i] ?? null;
+  }
+
+  isGlobal(spk: number): boolean {
+    const i = spk - 1;
+    return i >= 0 && i < this.globalFlags.length && !!this.globalFlags[i];
+  }
+
+  /**
+   * Set display name for 1-based spk.
+   * If promoteToGlobal and speaker is session-only, mark as global (new id needed by caller via export).
+   */
+  setDisplayName(spk: number, name: string): void {
+    const i = spk - 1;
+    if (i < 0 || i >= this.names.length) return;
+    const n = name.trim();
+    if (!n) return;
+    this.names[i] = n;
+    if (this.globalFlags[i]) this.dirtyGlobal = true;
+  }
+
+  /**
+   * Promote session speaker to global roster candidate, or refresh global name+emb.
+   * Returns payload for speaker-library upsert.
+   */
+  promoteOrUpdateGlobal(
+    spk: number,
+    displayName: string,
+  ): {
+    id: string | null;
+    displayName: string;
+    embedding: Float32Array;
+    count: number;
+    isNew: boolean;
+  } | null {
+    const i = spk - 1;
+    if (i < 0 || i >= this.centroids.length) return null;
+    const emb = this.centroids[i];
+    if (!emb) return null;
+    const n = displayName.trim() || this.names[i] || `Speaker ${spk}`;
+    this.names[i] = n;
+    const existingId = this.globalIds[i];
+    if (existingId) {
+      this.globalFlags[i] = true;
+      this.dirtyGlobal = true;
+      return {
+        id: existingId,
+        displayName: n,
+        embedding: emb,
+        count: this.counts[i] ?? 1,
+        isNew: false,
+      };
+    }
+    // Session-only → will get new id from library; mark pending global
+    this.globalFlags[i] = true;
+    this.dirtyGlobal = true;
+    return {
+      id: null,
+      displayName: n,
+      embedding: emb,
+      count: this.counts[i] ?? 1,
+      isNew: true,
+    };
+  }
+
+  /** After library assigns a new global id, bind it to this spk index. */
+  bindGlobalId(spk: number, id: string): void {
+    const i = spk - 1;
+    if (i < 0 || i >= this.globalIds.length) return;
+    this.globalIds[i] = id;
+    this.globalFlags[i] = true;
+  }
+
+  /** Export all global centroids for roster merge on session end. */
+  exportGlobalUpdates(): Array<{
+    id: string;
+    displayName: string;
+    embedding: number[];
+    count: number;
+  }> {
+    const out: Array<{
+      id: string;
+      displayName: string;
+      embedding: number[];
+      count: number;
+    }> = [];
+    for (let i = 0; i < this.centroids.length; i++) {
+      const id = this.globalIds[i];
+      if (!id || !this.globalFlags[i]) continue;
+      const emb = this.centroids[i];
+      if (!emb) continue;
+      out.push({
+        id,
+        displayName: this.names[i] || id,
+        embedding: Array.from(emb),
+        count: this.counts[i] ?? 1,
+      });
+    }
+    return out;
+  }
+
+  get hasDirtyGlobal(): boolean {
+    return this.dirtyGlobal;
   }
 
   /** Match against existing centroids only (no enroll). */
@@ -142,10 +280,7 @@ export class SherpaSpeakerTracker {
     }
     if (best < 0) return null;
     if (bestSim < this.args.spkThreshold) return null;
-    // Ambiguous: two speakers almost equally close → reject (caller may enroll or skip)
     if (second >= 0 && bestSim - second < MIN_MARGIN) {
-      // still return best but mark weak margin via second close to best
-      // allow assign only if clearly above threshold with some margin
       if (bestSim - second < MIN_MARGIN * 0.5) return null;
     }
     return { id: best + 1, sim: bestSim, second: Math.max(0, second) };
@@ -154,13 +289,19 @@ export class SherpaSpeakerTracker {
   private assignEmbedding(emb: Float32Array, allowUpdate: boolean): number {
     const match = this.matchEmbedding(emb);
     if (match) {
-      if (allowUpdate && match.sim >= Math.max(this.args.spkThreshold, UPDATE_MIN_SIM)) {
+      if (
+        allowUpdate &&
+        match.sim >= Math.max(this.args.spkThreshold, UPDATE_MIN_SIM)
+      ) {
         this.updateCentroid(match.id - 1, emb);
       }
       return match.id;
     }
     this.centroids.push(emb);
     this.counts.push(1);
+    this.names.push(`Speaker ${this.centroids.length}`);
+    this.globalIds.push(null);
+    this.globalFlags.push(false);
     return this.centroids.length;
   }
 
@@ -168,7 +309,6 @@ export class SherpaSpeakerTracker {
     const c = this.centroids[index];
     if (!c) return;
     const n = this.counts[index] ?? 1;
-    // Adaptive EMA: slower updates as speaker gets more samples
     const alpha = Math.max(0.08, this.ema / Math.sqrt(n));
     const updated = new Float32Array(c.length);
     for (let i = 0; i < c.length; i++) {
@@ -176,10 +316,15 @@ export class SherpaSpeakerTracker {
     }
     this.centroids[index] = l2Normalize(updated);
     this.counts[index] = n + 1;
+    if (this.globalFlags[index]) this.dirtyGlobal = true;
   }
 
   get numSpeakers(): number {
     return this.centroids.length;
+  }
+
+  get numGlobal(): number {
+    return this.globalFlags.filter(Boolean).length;
   }
 }
 
@@ -188,10 +333,6 @@ interface WindowSlice {
   rms: number;
 }
 
-/**
- * Pick diverse windows: start, end, and top-energy mid regions.
- * Overlap speech often pollutes the middle; start of a turn is cleaner.
- */
 function pickWindows(audio: Float32Array): WindowSlice[] {
   const n = audio.length;
   if (n < MIN_WINDOW_SAMPLES) return [];
@@ -211,11 +352,8 @@ function pickWindows(audio: Float32Array): WindowSlice[] {
     out.push({ samples: new Float32Array(slice), rms });
   };
 
-  // 1) onset (often single speaker starting)
   pushAt(0);
-  // 2) offset
   if (n > win * 1.2) pushAt(n - win);
-  // 3) energy peaks in the middle
   if (n > win * 1.5) {
     const hop = Math.max(Math.floor(win / 2), Math.floor(0.25 * SAMPLE_RATE));
     const peaks: Array<{ i: number; e: number }> = [];
@@ -230,7 +368,6 @@ function pickWindows(audio: Float32Array): WindowSlice[] {
     }
   }
 
-  // sort by energy descending for voting weight clarity
   out.sort((a, b) => b.rms - a.rms);
   return out.slice(0, MAX_WINDOWS);
 }

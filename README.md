@@ -26,7 +26,7 @@ npm i -g baribari && baribari
 |---------|----------------|
 | **Meeting-first TUI** | Speakers · live transcript · device/record/share status |
 | **Local ASR** | SenseVoice + Silero VAD via sherpa-onnx (no cloud required for speech) |
-| **Speaker labels** | Embedding-based ID with multi-window voting |
+| **Speaker labels** | Embedding ID + **global roster** (fixed attendees auto-match next meeting) |
 | **Optional AI** | OpenAI-compatible correct + translate |
 | **Sessions** | Auto-saved transcripts; `resume` browser · continue recording · AI translate/summary · in-TUI share |
 | **LAN share** | One host broadcasts; others join in the browser or CLI |
@@ -174,6 +174,23 @@ baribari resume ses_xxxx
 
 ---
 
+## Global speakers (fixed attendees)
+
+Voiceprints + display names are stored in:
+
+```text
+~/.config/baribari/speakers/roster.json
+```
+
+- On each live session, the roster is **loaded first** as speaker slots `1…G`.
+- Matching uses the same CAM++ embeddings / cosine threshold as session ID.
+- In the TUI, open the speaker list (`Tab`) → **rename** an auto-detected speaker (`Enter`) → that person is **saved to the global roster** (name + current embedding).
+- Later meetings auto-label them when the voice matches; centroids are EMA-updated and written back on exit.
+
+Turn off speaker ID with `--no-spk` if you do not need this.
+
+---
+
 ## Sessions
 
 Every live meeting is saved automatically:
@@ -209,7 +226,8 @@ Not a live meeting: browse captions on a **timeline**, optionally play audio, co
 | `Space` or `p` | Play / pause (`ffplay` for audio; else cursor only) |
 | `c` | **Continue** live capture into this session (not demo) |
 | `t` / `T` | Translate **current** / **all missing** (AI) |
-| `m` | Meeting **summary** → `summary.md` |
+| `m` | Meeting **summary** (transcript focus) |
+| `m` | **Merge** speakers (speaker panel only): all `○` · `Space` → · `Esc` → `y`/`n` save |
 | `s` | Settings — inside settings: `↑↓` move, `←→` change, `Esc`/`s` close |
 | `e` | Rename session |
 | `h` | Toggle **LAN share** (does not quit) |
@@ -232,6 +250,7 @@ Audio: `audio-part-*.wav` + `audio.wav` are **merged** when formats match, or ch
 | `c` | Clear on-screen transcript (does not delete the session files) |
 | `Tab` | Focus speakers ↔ transcript |
 | `1`–`9` | Assign last segment to speaker *N* (speaker-list focus) |
+| `m` | **Merge** speakers (in speaker list: source → pick target → Enter) |
 | `↑` `↓` | Scroll transcript / move settings |
 | `q` | Quit |
 
@@ -392,7 +411,8 @@ src/
   index.ts           CLI (commander subcommands)
   tui.ts             Fullscreen ANSI TUI
   transcribe.ts      VAD + ASR loop
-  speaker-tracker.ts Speaker embeddings
+  speaker-tracker.ts Speaker embeddings (+ global seed)
+  speaker-library.ts Global roster (roster.json)
   ai.ts              Optional LLM pipeline
   share-*.ts         LAN host / join
   setup.ts           First-run + downloads

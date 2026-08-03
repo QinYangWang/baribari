@@ -201,6 +201,13 @@ export interface TranscribeArgs {
   share: ShareConfig;
   /** VAD endpointing / chunking. */
   vad: VadConfig;
+  /**
+   * Called once when speaker tracker is ready (global roster seeded).
+   * Used by TUI/session to resolve names and promote renames to the roster.
+   */
+  onSpeakerTracker?: (
+    tracker: import("./speaker-tracker.js").SherpaSpeakerTracker,
+  ) => void;
 }
 
 export interface Segment {

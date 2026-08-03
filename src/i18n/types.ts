@@ -70,9 +70,20 @@ export type MessageTree = {
     vadWindow: string;
     speakerAdded: string;
     renamed: string;
+    globalSpeakersLoaded: string;
+    speakerSavedGlobal: string;
     deletedAlias: string;
     cannotDeleteAuto: string;
     cannotDeleteBound: string;
+    mergePickTarget: string;
+    mergeNeedTwo: string;
+    mergeSame: string;
+    mergeDone: string;
+    mergeCancel: string;
+    mergeHint: string;
+    mergeSaveAsk: string;
+    mergeSaved: string;
+    mergeDiscarded: string;
     noSpeakerN: string;
     noSegment: string;
     assigned: string;
@@ -176,6 +187,15 @@ export type MessageTree = {
     addAlias: string;
     assign: string;
     del: string;
+    merge: string;
+    mergeTo: string;
+    mergeSpace: string;
+    mergeSaveYes: string;
+    mergeSaveNo: string;
+    /** Embedded on dialog bottom border: Save(Y/Enter) */
+    btnSave: string;
+    /** Embedded on dialog bottom border: Cancel(N/Esc) */
+    btnCancel: string;
   };
   settings: {
     groups: {
@@ -301,7 +321,7 @@ export type MessageTree = {
     doctorStatusNeedsSetup: string;
     sessionUpdated: string;
     sessionSaved: string;
-    sessionSaveBanner: string;
+    sessionSaveBanner: string; // {tag} {name} {id} {dir}
   };
   setup: {
     title: string;
@@ -382,6 +402,8 @@ export type MessageTree = {
     summaryTitle: string;
     rawError: string;
     dismissHint: string;
+    /** Auto-dismiss notice (no action required). */
+    autoDismissHint: string;
     termTooSmall: string;
     footer: {
       nav: string;
@@ -395,6 +417,7 @@ export type MessageTree = {
       share: string;
       shareStop: string;
       editName: string;
+      merge: string;
       quit: string;
       na: string;
     };
@@ -413,6 +436,17 @@ export type MessageTree = {
       renameEmpty: string;
       renameDemo: string;
       renameFail: string;
+      mergeNeedSpk: string;
+      mergePickTarget: string;
+      mergeSame: string;
+      mergeDone: string;
+      mergeCancel: string;
+      mergeDemo: string;
+      mergeHint: string;
+      mergeSaveAsk: string;
+      mergeSaved: string;
+      mergeDiscarded: string;
+      mergeNeedPanel: string;
     };
     renameTitle: string;
     renameHint: string;
@@ -452,6 +486,6 @@ export type MessageTree = {
       noSummaryText: string;
       emptySummary: string;
     };
-    continueBanner: string;
+    continueBanner: string; // {name} {offset}
   };
 };

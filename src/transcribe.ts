@@ -18,6 +18,11 @@ const sherpa_onnx: any = require("sherpa-onnx-node");
 import { SAMPLE_RATE, assertModelsExist, modelPaths } from "./paths.js";
 import { SherpaSpeakerTracker } from "./speaker-tracker.js";
 import {
+  loadSpeakerRoster,
+  mergeGlobalSpeakerUpdates,
+  upsertGlobalSpeaker,
+} from "./speaker-library.js";
+import {
   createCapture,
   listMicDevices,
 } from "./audio-capture.js";
@@ -153,6 +158,30 @@ export async function transcribe(
   let tracker: SherpaSpeakerTracker | null = null;
   if (!args.noSpk) {
     tracker = new SherpaSpeakerTracker(buildSpeakerExtractor(paths), args);
+    // Fixed attendees: seed centroids so spk 1..G match roster across meetings
+    try {
+      const roster = loadSpeakerRoster();
+      if (roster.speakers.length) {
+        tracker.seedGlobal(
+          roster.speakers.map((s) => ({
+            id: s.id,
+            displayName: s.displayName,
+            embedding: s.embedding,
+            count: s.count,
+          })),
+        );
+        onStatus(
+          t("status.globalSpeakersLoaded", { n: roster.speakers.length }),
+        );
+      }
+    } catch {
+      /* ignore roster load errors */
+    }
+  }
+
+  // Expose for UI rename → promote to global roster (via args hook if present)
+  if (tracker && args.onSpeakerTracker) {
+    args.onSpeakerTracker(tracker);
   }
 
   const buffer: CircularBuffer = new sherpa_onnx.CircularBuffer(
@@ -348,6 +377,14 @@ export async function transcribe(
       pendingSegs = [];
       try {
         if (activeRecordPath) flushWav();
+      } catch {
+        /* ignore */
+      }
+      // Persist global voiceprint updates (EMA centroids for fixed attendees)
+      try {
+        if (tracker?.hasDirtyGlobal) {
+          mergeGlobalSpeakerUpdates(tracker.exportGlobalUpdates());
+        }
       } catch {
         /* ignore */
       }

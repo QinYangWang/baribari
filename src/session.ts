@@ -970,5 +970,109 @@ export function rewriteSessionTranscript(
   }
 }
 
+/** Rename a speaker display name in session (speakers.json). */
+export function renameSessionSpeaker(
+  data: SessionData,
+  spk: number,
+  displayName: string,
+): boolean {
+  const name = displayName.trim();
+  if (!name || !Number.isFinite(spk)) return false;
+  let hit = data.speakers.find((x) => x.spk === spk || x.id === `spk_${spk}`);
+  if (!hit) {
+    hit = { id: `spk_${spk}`, displayName: name, spk };
+    data.speakers.push(hit);
+  } else {
+    hit.displayName = name;
+  }
+  data.meta.speakerCount = data.speakers.length;
+  data.meta.updatedAt = new Date().toISOString();
+  if (!data.meta.builtin && data.meta.path && data.meta.path !== "(builtin)") {
+    const dir = data.meta.path;
+    try {
+      fs.writeFileSync(
+        path.join(dir, "speakers.json"),
+        JSON.stringify(data.speakers, null, 2) + "\n",
+        "utf8",
+      );
+    } catch {
+      return false;
+    }
+    const meta = readMetaFile(dir);
+    if (meta) {
+      meta.speakerCount = data.speakers.length;
+      meta.updatedAt = data.meta.updatedAt;
+      writeMeta(dir, meta);
+    }
+  }
+  return true;
+}
+
+/**
+ * Merge speaker `fromSpk` into `toSpk` in memory + on disk.
+ * Returns number of segments reassigned, or -1 on invalid input.
+ */
+export function mergeSessionSpeakers(
+  data: SessionData,
+  fromSpk: number,
+  toSpk: number,
+): number {
+  if (fromSpk === toSpk) return -1;
+  if (!Number.isFinite(fromSpk) || !Number.isFinite(toSpk)) return -1;
+
+  let n = 0;
+  for (const s of data.segments) {
+    if (s.spk === fromSpk) {
+      s.spk = toSpk;
+      s.speakerId = `spk_${toSpk}`;
+      n += 1;
+    } else if (s.speakerId === `spk_${fromSpk}`) {
+      s.speakerId = `spk_${toSpk}`;
+      if (s.spk === fromSpk) s.spk = toSpk;
+      n += 1;
+    }
+  }
+
+  // Keep target speaker entry; drop source
+  const to =
+    data.speakers.find((x) => x.spk === toSpk || x.id === `spk_${toSpk}`) ||
+    null;
+  data.speakers = data.speakers.filter(
+    (x) => x.spk !== fromSpk && x.id !== `spk_${fromSpk}`,
+  );
+  if (!to && !data.speakers.some((x) => x.spk === toSpk)) {
+    data.speakers.push({
+      id: `spk_${toSpk}`,
+      displayName: `Speaker ${toSpk}`,
+      spk: toSpk,
+    });
+  }
+
+  data.meta.speakerCount = data.speakers.length;
+  data.meta.updatedAt = new Date().toISOString();
+
+  if (!data.meta.builtin && data.meta.path && data.meta.path !== "(builtin)") {
+    const dir = data.meta.path;
+    rewriteSessionTranscript(dir, data.segments);
+    try {
+      fs.writeFileSync(
+        path.join(dir, "speakers.json"),
+        JSON.stringify(data.speakers, null, 2) + "\n",
+        "utf8",
+      );
+    } catch {
+      /* ignore */
+    }
+    const meta = readMetaFile(dir);
+    if (meta) {
+      meta.speakerCount = data.speakers.length;
+      meta.updatedAt = data.meta.updatedAt;
+      writeMeta(dir, meta);
+    }
+  }
+
+  return n;
+}
+
 // re-export helper used by callers
 export { displayText };

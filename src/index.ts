@@ -68,6 +68,7 @@ import {
   type SessionSpeaker,
   type SessionWriter,
 } from "./session.js";
+import { upsertGlobalSpeaker } from "./speaker-library.js";
 import readline from "node:readline";
 import { runResumeTui } from "./resume-tui.js";
 
@@ -1008,6 +1009,13 @@ async function runTui(
   process.once("unhandledRejection", onCrash);
   process.once("beforeExit", onCrash);
 
+  /** Live speaker tracker (global roster seeded inside transcribe). */
+  let speakerTracker: import("./speaker-tracker.js").SherpaSpeakerTracker | null =
+    null;
+  args.onSpeakerTracker = (tr) => {
+    speakerTracker = tr;
+  };
+
   const tui = createTui(args, {
     onQuit: () => requestStop(false),
     sessionDir: session.dir,
@@ -1015,15 +1023,44 @@ async function runTui(
     sessionName: session.meta.name,
     onSessionRenamed: (name) => {
       session.meta.name = name;
+      sessionLabel = name.trim() || sessionLabel;
+    },
+    resolveSpeakerName: (spk) => speakerTracker?.getDisplayName(spk),
+    onSpeakerRenamed: (spk, name) => {
+      if (!speakerTracker) return;
+      try {
+        const payload = speakerTracker.promoteOrUpdateGlobal(spk, name);
+        if (!payload) {
+          speakerTracker.setDisplayName(spk, name);
+          return;
+        }
+        const saved = upsertGlobalSpeaker({
+          id: payload.id || undefined,
+          displayName: payload.displayName,
+          embedding: payload.embedding,
+          count: payload.count,
+        });
+        speakerTracker.bindGlobalId(spk, saved.id);
+        speakerTracker.setDisplayName(spk, saved.displayName);
+        tui.setStatus(
+          t("status.speakerSavedGlobal", { name: saved.displayName }),
+        );
+      } catch {
+        speakerTracker.setDisplayName(spk, name);
+      }
     },
   });
+  // Alias is chrome only (status bar title); never toast on create/idle restore
+  let sessionLabel =
+    (session.meta.name || "").trim() || t("resume.renameTitle");
+  // Prefer ambient idle (listening) over dumping the auto Meeting name into status
   tui.setStatus(
     session.continuing
       ? t("resume.continueBanner", {
-          id: session.id,
+          name: sessionLabel,
           offset: Math.round(session.timeOffset),
         })
-      : `Session ${session.id}`,
+      : t("status.listening"),
   );
 
   // When user toggles record on without a path, bind to session audio
@@ -1053,10 +1090,10 @@ async function runTui(
     if (statusClearTimer) clearTimeout(statusClearTimer);
     const idleLabel = session.continuing
       ? t("resume.continueBanner", {
-          id: session.id,
+          name: sessionLabel,
           offset: Math.round(session.timeOffset),
         })
-      : `Session ${session.id}`;
+      : t("status.listening");
     statusClearTimer = setTimeout(() => {
       tui.setStatus(idleLabel);
     }, 6000);
@@ -1068,10 +1105,13 @@ async function runTui(
 
   const speakersFromSeg = (seg: Segment): SessionSpeaker[] | undefined => {
     if (seg.spk == null) return undefined;
+    const displayName =
+      speakerTracker?.getDisplayName(seg.spk) ||
+      t("common.speakerN", { n: seg.spk });
     return [
       {
         id: `spk_${seg.spk}`,
-        displayName: `Speaker ${seg.spk}`,
+        displayName,
         spk: seg.spk,
       },
     ];
@@ -1127,6 +1167,7 @@ async function runTui(
     console.log(
       t("cli.sessionSaveBanner", {
         tag,
+        name: session.meta.name || session.id,
         id: session.id,
         dir: session.dir,
       }),

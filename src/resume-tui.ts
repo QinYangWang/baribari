@@ -7,7 +7,9 @@
  *   Space / p    play/pause
  *   c            continue live capture (not demo)
  *   t / T        translate one / all missing
- *   m            summary
+ *   m            summary (transcript) / merge (speaker panel)
+ *   merge mode   all ○ · Space → mark · Esc ask save (y/n)
+ *   Tab          focus speakers ↔ transcript (wide layout)
  *   s            settings (←→ change values; Esc/s close)
  *   e            edit session name
  *   h            LAN share toggle
@@ -24,6 +26,8 @@ import {
   loadSessionSummary,
   renameSession,
   resolveAudioAtTime,
+  mergeSessionSpeakers,
+  renameSessionSpeaker,
   rewriteSessionTranscript,
   saveSessionSummary,
   segmentDisplay,
@@ -51,6 +55,7 @@ import {
   uiLangLabel,
   type UiLang,
 } from "./i18n/index.js";
+import { createKeyFeeder } from "./key-input.js";
 
 const ESC = "\x1b";
 const RESET = `${ESC}[0m`;
@@ -171,10 +176,18 @@ function truncMiddle(s: string, max: number): string {
   return head + ell + tail;
 }
 
+/** Force exact display width n (ANSI-aware). Always safe for table columns. */
 function pad(s: string, n: number): string {
-  const d = dw(s);
-  if (d === n) return s;
-  if (d > n) return trunc(stripAnsi(s), n);
+  if (n <= 0) return "";
+  const plain = stripAnsi(s);
+  const d = dw(plain);
+  if (d > n) return trunc(plain, n);
+  // Prefer keeping color when content already fits; pad with spaces after codes
+  if (d === n) {
+    // If colored string's visual width matches, keep it; else fall back to plain
+    return dw(s) === n ? s : plain;
+  }
+  // Append padding after the full (possibly colored) string
   return s + " ".repeat(n - d);
 }
 
@@ -229,7 +242,7 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
   const stdin = process.stdin;
 
   if (!stdout.isTTY) {
-    console.log(`Session ${data.meta.id}  ${data.meta.name}`);
+    console.log(data.meta.name || data.meta.id);
     for (const s of data.segments) {
       const sp =
         data.speakers.find((x) => x.spk === s.spk)?.displayName ||
@@ -288,6 +301,17 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
   let statusHint = "";
   let renaming = false;
   let renameDraft = "";
+  /** Multi-select merge (speaker panel only). */
+  let mergeMode = false;
+  let mergeSelected = new Set<number>(); // 1-based spk
+  let mergeConfirm = false;
+  /** Wide layout: left speaker column focus. */
+  let focusPanel: "transcript" | "speakers" = "transcript";
+  let speakerSel = 0;
+  let speakerScroll = 0;
+  /** Rename speaker (modal; exclusive input). */
+  let renamingSpeaker = false;
+  let speakerRenameDraft = "";
   let busy = false;
   let showSettings = false;
   // 0 uiLang · 1 translateTo · 2 model · 3 api status
@@ -295,14 +319,17 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
   const SETTINGS_COUNT = 4;
   let showSummary = false;
   let shareServer: ShareServer | null = null;
-  /** Modal dialog (errors / important notices). */
+  /** Modal dialog (errors / important notices). confirm → center y/n for merge. */
   let alertDlg: {
     kind: "error" | "warn" | "info";
     title: string;
     body: string;
     /** Optional raw / technical detail shown in an inner box. */
     detail?: string;
+    /** Merge save confirm: y saves / n·Esc discards. */
+    confirm?: boolean;
   } | null = null;
+  let alertTimer: ReturnType<typeof setTimeout> | null = null;
 
   const cols = () => stdout.columns || 80;
   const rows = () => stdout.rows || 24;
@@ -312,6 +339,46 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
       data.speakers.find((x) => x.spk === s.spk)?.displayName ||
       (s.spk != null ? `Speaker ${s.spk}` : "—")
     );
+  }
+
+  interface SpkRow {
+    spk: number;
+    name: string;
+    count: number;
+  }
+
+  function listSpeakers(): SpkRow[] {
+    const map = new Map<number, SpkRow>();
+    for (const sp of data.speakers) {
+      if (sp.spk == null) continue;
+      map.set(sp.spk, {
+        spk: sp.spk,
+        name: sp.displayName || `Speaker ${sp.spk}`,
+        count: 0,
+      });
+    }
+    for (const s of segments) {
+      if (s.spk == null) continue;
+      const cur = map.get(s.spk);
+      if (cur) cur.count += 1;
+      else {
+        map.set(s.spk, {
+          spk: s.spk,
+          name: speakerName(s),
+          count: 1,
+        });
+      }
+    }
+    return [...map.values()].sort((a, b) => a.spk - b.spk);
+  }
+
+  function jumpToSpeaker(spk: number) {
+    const idx = segments.findIndex((s) => s.spk === spk);
+    if (idx < 0) return;
+    focusSeg = idx;
+    const seg = segments[idx]!;
+    cursor = seg.start;
+    showSummary = false;
   }
 
   interface SegRange {
@@ -371,6 +438,46 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
       ranges.push({ si, start, end: rows.length });
     });
     return { rows, rowSeg, ranges };
+  }
+
+  /** Bottom border with embedded actions: ╰── Save(Y/Enter) ─ Cancel(N/Esc) ─╯ */
+  function bottomBorderWithActions(inner: number, borderC: string): string {
+    const save = t("footer.btnSave");
+    const cancel = t("footer.btnCancel");
+    // Visible width of right-side action segment (must match colored layout)
+    //   " " + save + " ─ " + cancel + " ─"
+    const chunkW = 1 + dw(save) + 3 + dw(cancel) + 2;
+    const dashL = Math.max(1, inner - chunkW);
+    // All border glyphs use borderC (accent purple); only labels use ok/muted
+    const colored =
+      `${borderC}${"─".repeat(dashL)} ${RESET}` +
+      `${FG.ok}${BOLD}${save}${RESET}` +
+      `${borderC} ─ ${RESET}` +
+      `${FG.muted}${cancel}${RESET}` +
+      `${borderC} ─${RESET}`;
+    return `${borderC}╰${RESET}${colored}${borderC}╯${RESET}`;
+  }
+
+  function renderRenameOverlay(W: number, _H: number): string[] {
+    const boxW = Math.min(56, Math.max(40, W - 6));
+    const inner = boxW - 2;
+    const contentW = Math.max(8, inner - 2);
+    const rows: string[] = [];
+    const borderC = FG.accent;
+    const line = (content: string) =>
+      `${borderC}│${RESET}${pad(content, inner)}${borderC}│${RESET}`;
+    const isSpk = renamingSpeaker;
+    const draft = isSpk ? speakerRenameDraft : renameDraft;
+    const title = isSpk ? t("footer.rename") : t("resume.renameTitle");
+    const field = trunc(draft, Math.max(4, contentW - 1)) + "▌";
+    rows.push(`${borderC}╭${"─".repeat(inner)}╮${RESET}`);
+    rows.push(line(` ${FG.accent}${BOLD}${title}${RESET}`));
+    rows.push(line(""));
+    rows.push(line(` ${FG.title}${field}${RESET}`));
+    rows.push(line(""));
+    // Save/Cancel sit on the bottom border (same as Merge confirm)
+    rows.push(bottomBorderWithActions(inner, borderC));
+    return rows;
   }
 
   function renderSettingsOverlay(W: number, _H: number): string[] {
@@ -572,25 +679,36 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
 
   function renderAlertOverlay(W: number, _H: number): string[] {
     if (!alertDlg) return [];
-    const boxW = Math.min(58, Math.max(40, W - 6));
+    const confirm = Boolean(alertDlg.confirm);
+    // Confirm uses same chrome as session-name dialog; notices are slightly smaller
+    const boxW = confirm
+      ? Math.min(56, Math.max(40, W - 6))
+      : Math.min(48, Math.max(36, W - 8));
     const inner = boxW - 2;
     const contentW = Math.max(8, inner - 2);
     const kind = alertDlg.kind;
     const accent =
       kind === "error" ? FG.err : kind === "warn" ? FG.warn : FG.cyan;
     const icon = kind === "error" ? "✕" : kind === "warn" ? "!" : "i";
-    const titleLine = `${accent}${BOLD}${icon}  ${alertDlg.title}${RESET}`;
+    // Confirm title matches rename modal (accent, no icon); notice keeps icon
+    const titleLine = confirm
+      ? `${FG.accent}${BOLD}${alertDlg.title}${RESET}`
+      : `${accent}${BOLD}${icon}  ${alertDlg.title}${RESET}`;
     const bodyLines = alertDlg.body
       .split(/\n/)
       .flatMap((ln) => wrap(ln, contentW));
-    const maxBody = 8;
+    const maxBody = confirm ? 6 : 8;
     const shown = bodyLines.slice(0, maxBody);
     if (bodyLines.length > maxBody) {
       shown.push(trunc(bodyLines[maxBody] || "…", contentW));
     }
 
     const rows: string[] = [];
-    const borderC = kind === "error" ? FG.err : FG.border;
+    const borderC = confirm
+      ? FG.accent
+      : kind === "error"
+        ? FG.err
+        : FG.border;
     const line = (content: string) =>
       `${borderC}│${RESET}${pad(content, inner)}${borderC}│${RESET}`;
 
@@ -601,11 +719,11 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
       rows.push(line(` ${FG.title}${wl}${RESET}`));
     }
 
-    // Nested detail box for raw error summary
+    // Nested detail box for raw error summary (non-confirm only)
     const detail = (alertDlg.detail || "").trim();
-    if (detail) {
+    if (detail && !confirm) {
       rows.push(line(""));
-      const nestInner = Math.max(10, inner - 4); // space for " │…│ "
+      const nestInner = Math.max(10, inner - 4);
       const nestContentW = Math.max(6, nestInner - 2);
       const dLines = detail
         .split(/\n/)
@@ -618,19 +736,15 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
           nestContentW,
         );
       }
-      const nestTop =
-        `${FG.muted}┌${"─".repeat(nestInner)}┐${RESET}`;
-      const nestBot =
-        `${FG.muted}└${"─".repeat(nestInner)}┘${RESET}`;
+      const nestTop = `${FG.muted}┌${"─".repeat(nestInner)}┐${RESET}`;
+      const nestBot = `${FG.muted}└${"─".repeat(nestInner)}┘${RESET}`;
       const nestHdr = pad(
         ` ${DIM}${FG.muted}${t("resume.rawError")}${RESET}`,
         nestInner,
       );
       rows.push(line(` ${nestTop}`));
       rows.push(
-        line(
-          ` ${FG.muted}│${RESET}${nestHdr}${FG.muted}│${RESET}`,
-        ),
+        line(` ${FG.muted}│${RESET}${nestHdr}${FG.muted}│${RESET}`),
       );
       for (const dl of dShown) {
         const cell = pad(` ${DIM}${FG.muted}${dl}${RESET}`, nestInner);
@@ -641,12 +755,25 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
       rows.push(line(` ${nestBot}`));
     }
 
-    rows.push(line(""));
-    rows.push(
-      line(` ${DIM}${FG.muted}${t("resume.dismissHint")}${RESET}`),
-    );
-    rows.push(`${borderC}╰${"─".repeat(inner)}╯${RESET}`);
+    if (confirm) {
+      rows.push(line(""));
+      // Actions embedded in bottom border (same as session rename)
+      rows.push(bottomBorderWithActions(inner, borderC));
+    } else {
+      rows.push(line(""));
+      rows.push(
+        line(` ${DIM}${FG.muted}${t("resume.autoDismissHint")}${RESET}`),
+      );
+      rows.push(`${borderC}╰${"─".repeat(inner)}╯${RESET}`);
+    }
     return rows;
+  }
+
+  function clearAlertTimer() {
+    if (alertTimer) {
+      clearTimeout(alertTimer);
+      alertTimer = null;
+    }
   }
 
   function showAlert(
@@ -654,10 +781,20 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
     title: string,
     body: string,
     detail?: string,
+    opts?: { confirm?: boolean },
   ) {
-    alertDlg = { kind, title, body, detail };
-    statusHint = "";
+    clearAlertTimer();
+    alertDlg = { kind, title, body, detail, confirm: opts?.confirm };
+    if (!opts?.confirm) statusHint = "";
     paint();
+    // Notices auto-close in 3s; confirm waits for y/n
+    if (!opts?.confirm) {
+      const snap = alertDlg;
+      alertTimer = setTimeout(() => {
+        if (alertDlg === snap) dismissAlert();
+      }, 3000);
+      alertTimer.unref?.();
+    }
   }
 
   function showError(err: unknown) {
@@ -667,6 +804,7 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
 
   function dismissAlert() {
     if (!alertDlg) return;
+    clearAlertTimer();
     alertDlg = null;
     paint();
   }
@@ -687,10 +825,22 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
 
     const inner = W - 2;
     const headerLines = 5;
-    // title…body + sep + keys line1 + keys line2 + bottom border
     const footerLines = 3;
     const bodyH = Math.max(3, H - headerLines - footerLines);
-    const bodyW = Math.max(10, inner - 2);
+
+    // Left speaker column when wide enough (CJK-friendly).
+    // Summary view uses full width — dual-col + long markdown wraps and corrupts the frame.
+    const showSpkCol = W >= 72 && !showSummary;
+    const spkInnerW = showSpkCol
+      ? Math.min(28, Math.max(20, Math.floor(W * 0.18)))
+      : 0;
+    // Content inset from borders: 1 col padding each side of each pane
+    const padX = 1;
+    // with spk: │ spkInnerW │ padX + bodyW + padX │  → spkInnerW + bodyW + 2*padX + 1 = inner
+    const bodyW = showSpkCol
+      ? Math.max(10, inner - spkInnerW - 1 - 2 * padX)
+      : Math.max(10, inner - 2 * padX);
+    const spkContentW = showSpkCol ? Math.max(6, spkInnerW - 2 * padX) : 0;
 
     if (segments.length) {
       focusSeg = Math.min(segments.length - 1, Math.max(0, focusSeg));
@@ -698,27 +848,36 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
       focusSeg = 0;
     }
 
+    const spkList = listSpeakers();
+    if (spkList.length) {
+      speakerSel = Math.min(spkList.length - 1, Math.max(0, speakerSel));
+    } else {
+      speakerSel = 0;
+      if (focusPanel === "speakers") focusPanel = "transcript";
+    }
+
     const { rows: visual, rowSeg, ranges } = buildVisual(bodyW);
     const viewStart = viewStartForFocus(ranges, bodyH, visual.length);
 
-    // Keep focus in sync with playhead when scrubbing/playing
+    // Keep focus in sync with playhead when scrubbing/playing (transcript focus)
     const at = segments.findIndex(
       (s) => s.start <= cursor && cursor < (s.end || s.start + 0.01),
     );
-    if (at >= 0 && !showSummary) focusSeg = at;
+    if (at >= 0 && !showSummary && focusPanel === "transcript") {
+      focusSeg = at;
+      const spk = segments[at]?.spk;
+      if (spk != null) {
+        const si = spkList.findIndex((x) => x.spk === spk);
+        if (si >= 0) speakerSel = si;
+      }
+    }
 
     const progressT = cursor;
     const ts = `${fmtDur(progressT)} / ${fmtDur(total)}`;
     const nSeg = segments.length;
-    const playTag = playing
-      ? "▶"
-      : hasAudio
-        ? "❚❚"
-        : "·";
+    const playTag = playing ? "▶" : hasAudio ? "❚❚" : "·";
     const posLabel =
-      nSeg <= 1
-        ? playTag
-        : `${playTag} ${focusSeg + 1}/${nSeg}`;
+      nSeg <= 1 ? playTag : `${playTag} ${focusSeg + 1}/${nSeg}`;
     const sideBudget = 1 + dw(posLabel) + 2 + 2 + dw(ts);
     const barW = Math.max(8, inner - sideBudget);
     const barPlain = progressBarPlain(progressT, total, barW);
@@ -777,33 +936,145 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
       slice.push(pad(row, bodyW));
     }
 
-    // Optional summary banner lines at top of body when showSummary
     let bodyLines = slice;
     if (showSummary && summaryText) {
-      const sumRows = wrap(summaryText.replace(/\r/g, ""), bodyW - 2).map(
-        (wl) => pad(`  ${FG.cyan}${wl}${RESET}`, bodyW),
+      // Full-width summary (speaker col hidden). Wrap markdown safely; pad every row.
+      const sumW = Math.max(8, bodyW - 2);
+      const raw = summaryText.replace(/\r/g, "").replace(/\t/g, "  ");
+      const sumRows: string[] = [];
+      sumRows.push(
+        pad(`${FG.accent}${BOLD}${t("resume.summaryTitle")}${RESET}`, bodyW),
       );
-      const head = pad(`${FG.accent}${BOLD}${t("resume.summaryTitle")}${RESET}`, bodyW);
-      bodyLines = [head, ...sumRows.slice(0, Math.max(1, bodyH - 2))];
+      sumRows.push(pad("", bodyW));
+      for (const para of raw.split("\n")) {
+        const line = para.length ? para : " ";
+        for (const wl of wrap(line, sumW)) {
+          sumRows.push(pad(`${FG.cyan}${wl}${RESET}`, bodyW));
+        }
+      }
+      // scrollable summary: keep last page if longer than body
+      const page = sumRows.length > bodyH ? sumRows.slice(0, bodyH) : sumRows;
+      bodyLines = page.map((r) => pad(r, bodyW));
       while (bodyLines.length < bodyH) bodyLines.push(pad("", bodyW));
+    }
+
+    // Build left speaker column (inset padX from borders / divider)
+    const spkLines: string[] = [];
+    const cell = (content: string, width: number) =>
+      " ".repeat(padX) + pad(content, width) + " ".repeat(padX);
+    if (showSpkCol) {
+      const spkFocus = focusPanel === "speakers";
+      const cw = spkContentW;
+      const hintParts = [
+        t("tui.speakersHint1"),
+        ...t("tui.speakersHint2").split(/\r?\n/).filter(Boolean),
+      ];
+      const title = `${spkFocus ? FG.accent + BOLD : FG.muted}${t("tui.speakersTitle")}${RESET}`;
+      spkLines.push(cell(title, cw));
+      for (const h of hintParts) {
+        for (const wl of wrap(h, cw)) {
+          spkLines.push(cell(`${DIM}${FG.muted}${wl}${RESET}`, cw));
+        }
+      }
+      spkLines.push(cell("", cw));
+      const listTop = spkLines.length;
+      const visible = Math.max(1, bodyH - listTop);
+      if (speakerSel < speakerScroll) speakerScroll = speakerSel;
+      if (speakerSel >= speakerScroll + visible) {
+        speakerScroll = speakerSel - visible + 1;
+      }
+      speakerScroll = Math.max(
+        0,
+        Math.min(speakerScroll, Math.max(0, spkList.length - visible)),
+      );
+      const sliceSp = spkList.slice(speakerScroll, speakerScroll + visible);
+      if (!spkList.length) {
+        spkLines.push(
+          cell(`${DIM}${FG.muted}${t("tui.noSpeakers")}${RESET}`, cw),
+        );
+      } else {
+        for (let i = 0; i < sliceSp.length; i++) {
+          const sp = sliceSp[i]!;
+          const idx = speakerScroll + i;
+          const sel = spkFocus && idx === speakerSel;
+          const hot =
+            !mergeMode &&
+            segments[focusSeg]?.spk === sp.spk &&
+            focusPanel === "transcript";
+          const marked = mergeMode && mergeSelected.has(sp.spk);
+          const col = SPK[(sp.spk - 1) % SPK.length] || FG.muted;
+          // Merge: all white ○; Space toggles →
+          const mark = mergeMode
+            ? marked
+              ? "→"
+              : "○"
+            : sel || hot
+              ? "●"
+              : "○";
+          const name = trunc(sp.name, Math.max(4, cw - 6));
+          const cnt = !mergeMode && sp.count > 0 ? ` ${sp.count}` : "";
+          const line = `${mark} ${name}${cnt}`;
+          const colored = mergeMode
+            ? marked
+              ? `${FG.warn}${BOLD}${line}${RESET}`
+              : sel
+                ? `${FG.accent}${BOLD}${line}${RESET}`
+                : `${FG.title}${line}${RESET}`
+            : sel
+              ? `${FG.accent}${BOLD}${line}${RESET}`
+              : `${col}${line}${RESET}`;
+          spkLines.push(cell(colored, cw));
+        }
+      }
+      while (spkLines.length < bodyH) spkLines.push(cell("", cw));
     }
 
     const lines: string[] = [];
     lines.push(`${FG.border}╭${"─".repeat(inner)}╮${RESET}`);
-    const titleCore = `◆ ${data.meta.name}`;
-    const id = data.meta.id;
-    const titleRoom = Math.max(8, inner - dw(id) - 1);
-    const title = trunc(titleCore, titleRoom);
-    const headPad = Math.max(0, inner - dw(title) - dw(id));
+    // Title = session alias only (id is internal, not shown in chrome)
+    const titleCore = `◆ ${data.meta.name || t("resume.renameTitle")}`;
+    const headInner = Math.max(8, inner - 2 * padX);
+    const title = trunc(titleCore, headInner);
     lines.push(
-      `${FG.border}│${RESET}${BOLD}${FG.accent}${title}${RESET}${" ".repeat(headPad)}${FG.muted}${id}${RESET}${FG.border}│${RESET}`,
+      `${FG.border}│${RESET}${" ".repeat(padX)}${BOLD}${FG.accent}${pad(title, headInner)}${RESET}${" ".repeat(padX)}${FG.border}│${RESET}`,
     );
     lines.push(`${FG.border}├${"─".repeat(inner)}┤${RESET}`);
-    lines.push(`${FG.border}│${RESET}${progLine}${FG.border}│${RESET}`);
+    // rebuild progress for inset width
+    const progInner = headInner;
+    const sideBudget2 = 1 + dw(posLabel) + 2 + 2 + dw(ts);
+    const barW2 = Math.max(8, progInner - sideBudget2);
+    const barPlain2 = progressBarPlain(progressT, total, barW2);
+    const fillN2 = (barPlain2.match(/█/g) || []).length;
+    const barColored2 =
+      `${FG.accent}${"█".repeat(fillN2)}${RESET}` +
+      `${FG.border}${"░".repeat(barW2 - fillN2)}${RESET}`;
+    const plainProg2 = ` ${posLabel}  ${barPlain2}  ${ts}`;
+    const coloredProg2 = ` ${posColored}  ${barColored2}  ${FG.muted}${ts}${RESET}`;
+    const progPadded =
+      dw(plainProg2) <= progInner
+        ? coloredProg2 +
+          " ".repeat(Math.max(0, progInner - dw(plainProg2)))
+        : pad(plainProg2, progInner);
+    lines.push(
+      `${FG.border}│${RESET}${" ".repeat(padX)}${progPadded}${" ".repeat(padX)}${FG.border}│${RESET}`,
+    );
     lines.push(`${FG.border}├${"─".repeat(inner)}┤${RESET}`);
 
-    for (const row of bodyLines) {
-      lines.push(`${FG.border}│${RESET} ${row} ${FG.border}│${RESET}`);
+    for (let i = 0; i < bodyH; i++) {
+      // Re-pad every cell so nothing can exceed its column (prevents terminal wrap bleed)
+      const tr = pad(bodyLines[i] ?? "", bodyW);
+      if (showSpkCol) {
+        const left = pad(spkLines[i] ?? "", spkInnerW);
+        const mid = focusPanel === "speakers" ? FG.accent : FG.border;
+        // │ spkInnerW │ padX + bodyW + padX │
+        lines.push(
+          `${FG.border}│${RESET}${left}${mid}│${RESET}${" ".repeat(padX)}${tr}${" ".repeat(padX)}${FG.border}│${RESET}`,
+        );
+      } else {
+        lines.push(
+          `${FG.border}│${RESET}${" ".repeat(padX)}${tr}${" ".repeat(padX)}${FG.border}│${RESET}`,
+        );
+      }
     }
 
     lines.push(`${FG.border}├${"─".repeat(inner)}┤${RESET}`);
@@ -814,30 +1085,39 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
     const shareKey = shareServer
       ? kcap("h", t("resume.footer.shareStop"))
       : kcap("h", t("resume.footer.share"));
-    const footer = renaming
-      ? `${FG.accent}${BOLD}${t("resume.renameTitle")}${RESET}  ${FG.title}${renameDraft}▌${RESET}  ${DIM}${FG.muted}${t("resume.renameHint")}${RESET}`
-      : [
-          kcap("↑↓", t("resume.footer.nav")),
-          kcap("←→", t("resume.footer.seek")),
-          kcap("Space", t("resume.footer.play")),
-          contKey,
-          kcap("t", t("resume.footer.translate")),
-          kcap("T", t("resume.footer.translateAll")),
-          kcap("m", t("resume.footer.summary")),
-          kcap("s", t("resume.footer.settings")),
-          kcap("e", t("resume.footer.editName")),
-          shareKey,
-          kcap("q", t("resume.footer.quit")),
-        ].join("  ") +
-        (statusHint ? `  ${FG.warn}${statusHint}${RESET}` : "") +
-        (busy ? `  ${FG.accent}…${RESET}` : "") +
-        (hasAudio && audioClips.length > 1
-          ? `  ${FG.muted}${audioClips.length} clips${RESET}`
-          : !hasAudio
-            ? `  ${FG.muted}no audio${RESET}`
-            : "");
+    const footer = renaming || renamingSpeaker
+      ? `${FG.accent}${BOLD}${renamingSpeaker ? t("footer.rename") : t("resume.renameTitle")}${RESET}  ${DIM}${FG.muted}${t("resume.renameHint")}${RESET}`
+      : mergeMode
+        ? [
+            kcap("↑↓", t("footer.select")),
+            kcap("Space", t("footer.mergeSpace")),
+            kcap("Esc", t("footer.close")),
+            `${FG.warn}${t("resume.status.mergeHint")}${RESET}`,
+          ].join("  ")
+        : [
+            kcap("↑↓", t("resume.footer.nav")),
+            kcap("Tab", t("footer.switch")),
+            kcap("←→", t("resume.footer.seek")),
+            kcap("Space", t("resume.footer.play")),
+            contKey,
+            kcap("t", t("resume.footer.translate")),
+            kcap("T", t("resume.footer.translateAll")),
+            kcap("m", t("resume.footer.summary")),
+            kcap("s", t("resume.footer.settings")),
+            kcap("e", t("resume.footer.editName")),
+            shareKey,
+            kcap("q", t("resume.footer.quit")),
+          ].join("  ") +
+          (statusHint ? `  ${FG.warn}${statusHint}${RESET}` : "") +
+          (busy ? `  ${FG.accent}…${RESET}` : "") +
+          (hasAudio && audioClips.length > 1
+            ? `  ${FG.muted}${audioClips.length} clips${RESET}`
+            : !hasAudio
+              ? `  ${FG.muted}no audio${RESET}`
+              : "");
+    const footerW = Math.max(10, inner - 2 * padX);
     lines.push(
-      `${FG.border}│${RESET} ${pad(footer, bodyW)} ${FG.border}│${RESET}`,
+      `${FG.border}│${RESET}${" ".repeat(padX)}${pad(footer, footerW)}${" ".repeat(padX)}${FG.border}│${RESET}`,
     );
     lines.push(`${FG.border}╰${"─".repeat(inner)}╯${RESET}`);
 
@@ -847,7 +1127,17 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
       if (i < H - 1) out += "\n";
     }
 
-    if (showSettings && !alertDlg) {
+    // Modal layers (rename / settings / alert) — rename takes exclusive input
+    if ((renaming || renamingSpeaker) && !alertDlg) {
+      const overlay = renderRenameOverlay(W, H);
+      const boxH = overlay.length;
+      const boxW = Math.min(56, Math.max(40, W - 6));
+      const top = Math.max(1, Math.floor((H - boxH) / 2));
+      const left = Math.max(2, Math.floor((W - boxW) / 2));
+      for (let i = 0; i < overlay.length; i++) {
+        out += `${ESC}[${top + i + 1};${left + 1}H${overlay[i]}`;
+      }
+    } else if (showSettings && !alertDlg) {
       const overlay = renderSettingsOverlay(W, H);
       const boxH = overlay.length;
       const boxW = Math.min(Math.max(56, Math.floor(W * 0.72)), W - 4);
@@ -886,13 +1176,22 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
     return Math.min(maxStart, Math.max(0, vs));
   }
 
-  function flash(msg: string, ms = 2000) {
-    statusHint = msg;
-    paint();
-    setTimeout(() => {
-      if (statusHint === msg) statusHint = "";
-      if (!closed) paint();
-    }, ms);
+  /** One-shot user notice as modal popup (replaces footer flash). */
+  function flash(msg: string, _ms = 2000) {
+    const lower = msg.toLowerCase();
+    const kind: "error" | "warn" | "info" =
+      /fail|error|错误|失败|无法|不能|invalid|missing/i.test(lower)
+        ? "error"
+        : /warn|取消|放弃|demo|请|need|cannot|无法/i.test(lower)
+          ? "warn"
+          : "info";
+    const title =
+      kind === "error"
+        ? t("resume.alert.errTitle")
+        : kind === "warn"
+          ? t("resume.alert.hint")
+          : t("resume.alert.hint");
+    showAlert(kind, title, msg);
   }
 
   /** Translate only the focused (highlighted) segment. */
@@ -933,6 +1232,7 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
       return;
     }
     busy = true;
+    // progress stays non-blocking (modal would trap keys during AI work)
     statusHint = t("resume.status.translatingOne");
     paint();
     try {
@@ -1092,6 +1392,7 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
     }
     if (summaryText && !showSummary) {
       showSummary = true;
+      focusPanel = "transcript"; // summary is full-width; leave speaker focus
       paint();
       return;
     }
@@ -1114,6 +1415,7 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
         data.meta.summary = sum;
       }
       showSummary = true;
+      focusPanel = "transcript";
       flash(t("resume.status.summaryDone"));
     } catch (e) {
       showError(e);
@@ -1218,7 +1520,7 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
     if (!hit) return;
     const bin = which("ffplay") || which("ffplay.exe");
     if (!bin) {
-      statusHint = "ffplay not found (audio seek needs ffmpeg)";
+      flash("ffplay not found (audio seek needs ffmpeg)");
       // still advance cursor synthetically
       playing = true;
       const t0 = Date.now();
@@ -1324,7 +1626,12 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
     if (closed) return;
     closed = true;
     stopAudio();
-    if (keyTimer) clearTimeout(keyTimer);
+    clearAlertTimer();
+    try {
+      keyFeeder.reset();
+    } catch {
+      /* ignore */
+    }
     // stop in-TUI share when leaving
     if (shareServer) {
       try {
@@ -1356,63 +1663,241 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
 
   function beginRename() {
     if (data.meta.builtin) {
-      flash(t("resume.status.renameDemo"));
+      showAlert("warn", t("resume.renameTitle"), t("resume.status.renameDemo"));
       return;
     }
     if (!data.meta.path || data.meta.path === "(builtin)") {
-      flash(t("resume.status.renameFail"));
+      showAlert("error", t("resume.renameTitle"), t("resume.status.renameFail"));
       return;
     }
     renaming = true;
     renameDraft = data.meta.name || "";
     showSettings = false;
     showSummary = false;
+    mergeMode = false;
+    mergeSelected = new Set();
+    mergeConfirm = false;
+    statusHint = "";
     paint();
   }
 
   function commitRename() {
     const next = renameDraft.trim();
     renaming = false;
+    renameDraft = "";
     if (!next) {
-      flash(t("resume.status.renameEmpty"));
-      paint();
+      showAlert("warn", t("resume.renameTitle"), t("resume.status.renameEmpty"));
       return;
     }
     const meta = renameSession(data.meta.path, next);
     if (meta) {
       data.meta.name = meta.name;
-      flash(t("resume.status.renamed", { name: meta.name }));
+      showAlert(
+        "info",
+        t("resume.renameTitle"),
+        t("resume.status.renamed", { name: meta.name }),
+      );
     } else {
-      flash(t("resume.status.renameFail"));
+      showAlert("error", t("resume.renameTitle"), t("resume.status.renameFail"));
     }
-    paint();
   }
 
   function cancelRename() {
     renaming = false;
     renameDraft = "";
+    statusHint = "";
     paint();
   }
 
+  function beginRenameSpeaker() {
+    if (data.meta.builtin) {
+      showAlert("warn", t("footer.rename"), t("resume.status.mergeDemo"));
+      return;
+    }
+    const list = listSpeakers();
+    const sp = list[speakerSel];
+    if (!sp) {
+      flash(t("resume.status.mergeNeedSpk"));
+      return;
+    }
+    renamingSpeaker = true;
+    speakerRenameDraft = sp.name || "";
+    showSettings = false;
+    showSummary = false;
+    mergeMode = false;
+    mergeSelected = new Set();
+    mergeConfirm = false;
+    statusHint = "";
+    paint();
+  }
+
+  function commitRenameSpeaker() {
+    const list = listSpeakers();
+    const sp = list[speakerSel];
+    const next = speakerRenameDraft.trim();
+    renamingSpeaker = false;
+    speakerRenameDraft = "";
+    if (!sp) {
+      paint();
+      return;
+    }
+    if (!next) {
+      showAlert("warn", t("footer.rename"), t("resume.status.renameEmpty"));
+      return;
+    }
+    const ok = renameSessionSpeaker(data, sp.spk, next);
+    if (ok) {
+      showAlert(
+        "info",
+        t("footer.rename"),
+        t("resume.status.renamed", { name: next }),
+      );
+    } else {
+      showAlert("error", t("footer.rename"), t("resume.status.renameFail"));
+    }
+  }
+
+  function cancelRenameSpeaker() {
+    renamingSpeaker = false;
+    speakerRenameDraft = "";
+    statusHint = "";
+    paint();
+  }
+
+  function beginMerge() {
+    if (data.meta.builtin) {
+      flash(t("resume.status.mergeDemo"));
+      return;
+    }
+    // Merge only works in the speaker panel
+    if (focusPanel !== "speakers" || (cols() || 80) < 72) {
+      flash(t("resume.status.mergeNeedPanel"));
+      return;
+    }
+    const list = listSpeakers();
+    if (list.length < 2) {
+      flash(t("resume.status.mergeNeedSpk"));
+      return;
+    }
+    mergeMode = true;
+    mergeSelected = new Set();
+    mergeConfirm = false;
+    showSummary = false;
+    showSettings = false;
+    statusHint = t("resume.status.mergeHint");
+    paint();
+  }
+
+  function toggleMergeMark() {
+    const list = listSpeakers();
+    const sp = list[speakerSel];
+    if (!sp) return;
+    if (mergeSelected.has(sp.spk)) mergeSelected.delete(sp.spk);
+    else mergeSelected.add(sp.spk);
+    statusHint = t("resume.status.mergeHint");
+    paint();
+  }
+
+  function requestMergeExit() {
+    if (mergeSelected.size === 0) {
+      discardMerge();
+      return;
+    }
+    if (mergeSelected.size < 2) {
+      flash(t("resume.status.mergeSame"));
+      return;
+    }
+    mergeConfirm = true;
+    statusHint = "";
+    // Center modal confirm (y / n)
+    showAlert(
+      "warn",
+      t("footer.merge"),
+      t("resume.status.mergeSaveAsk", { n: mergeSelected.size }),
+      undefined,
+      { confirm: true },
+    );
+  }
+
+  function discardMerge() {
+    mergeMode = false;
+    mergeSelected = new Set();
+    mergeConfirm = false;
+    flash(t("resume.status.mergeDiscarded"));
+    paint();
+  }
+
+  /** First selected (list order) is keep target; rest merge into it. */
+  function saveMerge() {
+    const list = listSpeakers();
+    const ordered = list.filter((s) => mergeSelected.has(s.spk));
+    if (ordered.length < 2) {
+      statusHint = t("resume.status.mergeSame");
+      mergeConfirm = false;
+      paint();
+      return;
+    }
+    const target = ordered[0]!;
+    const sources = ordered.slice(1);
+    let segs = 0;
+    for (const src of sources) {
+      const n = mergeSessionSpeakers(data, src.spk, target.spk);
+      if (n > 0) segs += n;
+    }
+    mergeMode = false;
+    mergeSelected = new Set();
+    mergeConfirm = false;
+    // re-sync selection to target
+    const next = listSpeakers();
+    const ti = next.findIndex((s) => s.spk === target.spk);
+    speakerSel = ti >= 0 ? ti : 0;
+    showAlert(
+      "info",
+      t("footer.merge"),
+      t("resume.status.mergeDone", {
+        n: ordered.length,
+        to: target.name,
+        segs,
+      }),
+    );
+  }
+
   function onKey(key: string) {
-    // Modal alert takes priority — any key dismisses (except Ctrl+C still quits)
+    // Modal alert takes priority
     if (alertDlg) {
       if (key === "\x03") {
         finish({ type: "quit" });
+        return;
+      }
+      // Merge save confirm (center): y / n
+      if (alertDlg.confirm) {
+        if (key === "y" || key === "Y" || key === "\r" || key === "\n") {
+          alertDlg = null;
+          saveMerge();
+          return;
+        }
+        if (key === "n" || key === "N" || key === "\x1b") {
+          alertDlg = null;
+          discardMerge();
+          return;
+        }
         return;
       }
       dismissAlert();
       return;
     }
 
-    // Session rename input
-    if (renaming) {
+    // Session / speaker rename: exclusive modal — swallow ALL keys
+    if (renaming || renamingSpeaker) {
       if (key === "\x1b") {
-        cancelRename();
+        if (renamingSpeaker) cancelRenameSpeaker();
+        else cancelRename();
         return;
       }
+      if (key.startsWith("\x1b")) return; // CSI / arrows
       if (key === "\r" || key === "\n") {
-        commitRename();
+        if (renamingSpeaker) commitRenameSpeaker();
+        else commitRename();
         return;
       }
       if (key === "\x03") {
@@ -1420,14 +1905,52 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
         return;
       }
       if (key === "\x7f" || key === "\b" || key === "\x08") {
-        renameDraft = renameDraft.slice(0, -1);
+        if (renamingSpeaker) {
+          speakerRenameDraft = speakerRenameDraft.slice(0, -1);
+        } else {
+          renameDraft = renameDraft.slice(0, -1);
+        }
         paint();
         return;
       }
-      if (key.length === 1 && key >= " ") {
-        if (renameDraft.length < 80) renameDraft += key;
+      if (key === "\t") return;
+      // Accept CJK / any non-control grapheme (not only ASCII printable)
+      if (key && !key.startsWith("\x1b") && key !== "\x7f" && key >= " ") {
+        if (renamingSpeaker) {
+          if ([...speakerRenameDraft].length < 80) speakerRenameDraft += key;
+        } else if ([...renameDraft].length < 80) {
+          renameDraft += key;
+        }
         paint();
       }
+      return;
+    }
+
+    // Speaker multi-select merge (speaker panel only)
+    // save confirm is handled by alertDlg.confirm above
+    if (mergeMode) {
+      if (key === "\x1b") {
+        requestMergeExit();
+        return;
+      }
+      if (key === "\x03") {
+        finish({ type: "quit" });
+        return;
+      }
+      // Stay locked on speaker panel while merging
+      if (key === "\x1b[A" || key === "k") {
+        moveSpeakerSel(-1);
+        return;
+      }
+      if (key === "\x1b[B" || key === "j") {
+        moveSpeakerSel(1);
+        return;
+      }
+      if (key === " ") {
+        toggleMergeMark();
+        return;
+      }
+      // block Tab / play / other shortcuts
       return;
     }
 
@@ -1473,12 +1996,7 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
     }
     if (key === "c" || key === "C") {
       if (!continuable) {
-        statusHint = t("resume.status.demoNoContinue");
-        paint();
-        setTimeout(() => {
-          statusHint = "";
-          if (!closed) paint();
-        }, 1500);
+        flash(t("resume.status.demoNoContinue"));
         return;
       }
       finish({ type: "continue", sessionId: data.meta.id });
@@ -1509,7 +2027,28 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
       return;
     }
     if (key === "m" || key === "M") {
-      void runSummary();
+      // m in speaker panel = merge; m in transcript = summary
+      if (focusPanel === "speakers") {
+        beginMerge();
+      } else {
+        void runSummary();
+      }
+      return;
+    }
+    if (key === "\t") {
+      if (listSpeakers().length && (cols() || 80) >= 72) {
+        focusPanel = focusPanel === "speakers" ? "transcript" : "speakers";
+        // sync speaker sel from current segment
+        if (focusPanel === "speakers") {
+          const spk = segments[focusSeg]?.spk;
+          if (spk != null) {
+            const list = listSpeakers();
+            const si = list.findIndex((x) => x.spk === spk);
+            if (si >= 0) speakerSel = si;
+          }
+        }
+        paint();
+      }
       return;
     }
     if (key === " " || key === "p") {
@@ -1526,13 +2065,32 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
       return;
     }
     if (key === "\x1b[A" || key === "k") {
-      moveFocus(-1);
+      if (focusPanel === "speakers") moveSpeakerSel(-1);
+      else moveFocus(-1);
       return;
     }
     if (key === "\x1b[B" || key === "j") {
-      moveFocus(1);
+      if (focusPanel === "speakers") moveSpeakerSel(1);
+      else moveFocus(1);
       return;
     }
+    // Enter on speaker list → rename speaker (modal)
+    if (
+      (key === "\r" || key === "\n") &&
+      focusPanel === "speakers"
+    ) {
+      beginRenameSpeaker();
+      return;
+    }
+  }
+
+  function moveSpeakerSel(delta: number) {
+    const list = listSpeakers();
+    if (!list.length) return;
+    speakerSel = (speakerSel + delta + list.length) % list.length;
+    const sp = list[speakerSel];
+    if (sp) jumpToSpeaker(sp.spk);
+    paint();
   }
 
   function moveFocus(delta: number) {
@@ -1550,40 +2108,8 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
     paint();
   }
 
-  let keyBuf = "";
-  let keyTimer: NodeJS.Timeout | null = null;
-  function feed(chunk: Buffer) {
-    for (let i = 0; i < chunk.length; i++) {
-      const b = chunk[i]!;
-      const ch = String.fromCharCode(b);
-      if (b === 0x1b) {
-        keyBuf = "\x1b";
-        if (keyTimer) clearTimeout(keyTimer);
-        keyTimer = setTimeout(() => {
-          if (keyBuf) onKey(keyBuf);
-          keyBuf = "";
-        }, 40);
-        continue;
-      }
-      if (keyBuf) {
-        keyBuf += ch;
-        if (keyBuf.length >= 3 && /[A-Za-z~]$/.test(keyBuf)) {
-          if (keyTimer) clearTimeout(keyTimer);
-          onKey(keyBuf);
-          keyBuf = "";
-        } else if (keyBuf.length > 8) {
-          if (keyTimer) clearTimeout(keyTimer);
-          onKey(keyBuf);
-          keyBuf = "";
-        }
-        continue;
-      }
-      // include Enter, backspace (0x08/0x7f), printable
-      if (b === 0x03 || b === 0x0d || b === 0x08 || b === 0x7f || b >= 0x20) {
-        onKey(ch);
-      }
-    }
-  }
+  const keyFeeder = createKeyFeeder(onKey);
+  const feed = keyFeeder.feed;
 
   function onResize() {
     lastW = 0;

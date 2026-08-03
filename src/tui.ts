@@ -6,6 +6,7 @@
 
 import fs from "node:fs";
 import os from "node:os";
+import path from "node:path";
 import type { AudioSource, Lang, Segment, TranscribeArgs } from "./types.js";
 import { displayText } from "./types.js";
 import {
@@ -33,6 +34,7 @@ import {
   type UiLang,
 } from "./i18n/index.js";
 import { renameSession } from "./session.js";
+import { createKeyFeeder } from "./key-input.js";
 
 /** Prefer a non-internal IPv4 for LAN share URLs. */
 function lanIPv4(): string[] {
@@ -74,6 +76,7 @@ type UiMode =
   | "normal"
   | "speaker-list"
   | "speaker-rename"
+  | "speaker-merge"
   | "session-rename"
   | "settings"
   | "settings-edit";
@@ -539,6 +542,42 @@ function drawBox(
   }
 }
 
+/**
+ * Embed action labels into the bottom border line (right-aligned):
+ * └──────── Save(Y/Enter) ─ Cancel(N/Esc) ─┘
+ */
+function drawBottomBorderActions(
+  buf: Cell[][],
+  r: Rect,
+  border: RGB = C.border,
+): void {
+  if (r.w < 8 || r.h < 2) return;
+  const by = r.y + r.h - 1;
+  // Keep border glyphs on accent/border color (never default white)
+  const style = { fg: border, bg: C.panelBg };
+  putChar(buf, r.x, by, "└", style);
+  putChar(buf, r.x + r.w - 1, by, "┘", style);
+  for (let x = r.x + 1; x < r.x + r.w - 1; x++) {
+    putChar(buf, x, by, "─", style);
+  }
+  const save = t("footer.btnSave");
+  const cancel = t("footer.btnCancel");
+  // Right-aligned: " Save ─ Cancel ─"
+  const chunkW = 1 + dw(save) + 3 + dw(cancel) + 2;
+  let start = r.x + r.w - 1 - chunkW;
+  if (start < r.x + 2) start = r.x + 2;
+  let x = start;
+  putChar(buf, x, by, " ", style);
+  x += 1;
+  putText(buf, x, by, save, { fg: C.ok, bold: true, bg: C.panelBg });
+  x += dw(save);
+  putText(buf, x, by, " ─ ", style);
+  x += 3;
+  putText(buf, x, by, cancel, { fg: C.muted, bg: C.panelBg });
+  x += dw(cancel);
+  putText(buf, x, by, " ─", style);
+}
+
 function dimBackground(buf: Cell[][]): void {
   for (const row of buf) {
     for (const cell of row) {
@@ -669,11 +708,12 @@ function computeLayout(W: number, H: number, showMessageBar: boolean): Layout {
 
   if (W >= WIDE_MIN) {
     mode = "wide";
-    leftW = Math.min(28, Math.max(22, Math.floor(W * 0.16)));
+    // Keep speaker column wide enough for CJK hints (display width ≈ 2× chars)
+    leftW = Math.min(32, Math.max(26, Math.floor(W * 0.18)));
     rightW = Math.min(34, Math.max(26, Math.floor(W * 0.22)));
   } else if (W >= MEDIUM_MIN) {
     mode = "medium";
-    leftW = Math.min(26, Math.max(20, Math.floor(W * 0.2)));
+    leftW = Math.min(30, Math.max(24, Math.floor(W * 0.22)));
     rightW = 0;
   } else {
     mode = "narrow";
@@ -729,6 +769,10 @@ export function createTui(
     sessionName?: string;
     sessionId?: string;
     onSessionRenamed?: (name: string) => void;
+    /** Global roster / tracker display name for ASR speaker index. */
+    resolveSpeakerName?: (spk: number) => string | undefined;
+    /** Rename ASR speaker → promote/update global voiceprint roster. */
+    onSpeakerRenamed?: (spk: number, name: string) => void;
   },
 ): TuiHandle {
   if (args.uiLang) setUiLang(args.uiLang);
@@ -760,11 +804,25 @@ export function createTui(
   let speakerScroll = 0;
   let renameDraft = "";
   let sessionRenameDraft = "";
+  /** Multi-select merge in speaker panel only. */
+  let mergeSelected = new Set<string>();
+  /** After Esc: ask whether to save the multi-select merge. */
+  let mergeConfirm = false;
 
   let settingsFocus = 0;
   let settingsScroll = 0;
   let editDraft = "";
   let editField: string | null = null;
+
+  /** Top-right toast / notice (user tips). confirm → center dialog like rename. */
+  let toast: {
+    kind: "error" | "warn" | "info";
+    title: string;
+    body: string;
+    /** If true, y saves / n·Esc discards (merge confirm). */
+    confirm?: boolean;
+  } | null = null;
+  let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
   let prevBuf: Cell[][] | null = null;
   let lastW = 0;
@@ -798,17 +856,28 @@ export function createTui(
   function ensureSpeaker(spk: number | null): string | null {
     if (spk == null) return null;
     const id = speakerIdFromSpk(spk)!;
+    const rosterName = opts.resolveSpeakerName?.(spk)?.trim();
     if (!speakers.has(id)) {
       const color = SPK_COLORS[(spk - 1) % SPK_COLORS.length]!;
       speakers.set(id, {
         id,
         detectedLabel: `speaker_${spk}`,
-        displayName: t("common.speakerN", { n: spk }),
+        displayName: rosterName || t("common.speakerN", { n: spk }),
         color,
         segmentCount: 0,
         isActive: false,
         manual: false,
       });
+    } else if (rosterName) {
+      // Keep UI name in sync when global roster already has a label
+      const sp = speakers.get(id)!;
+      if (
+        !sp.manual &&
+        (sp.displayName === t("common.speakerN", { n: spk }) ||
+          sp.displayName.startsWith("Speaker "))
+      ) {
+        sp.displayName = rosterName;
+      }
     }
     return id;
   }
@@ -1222,14 +1291,10 @@ export function createTui(
     const spkN = speakers.size;
     const segN = segments.length;
 
-    const namePart =
-      mode === "session-rename"
-        ? `${t("resume.renameTitle")}: ${sessionRenameDraft}▌`
-        : sessionName
-          ? truncateDisplay(sessionName, 28)
-          : sessionId
-            ? sessionId
-            : "";
+    // Session alias only (never surface raw session id in the chrome)
+    const namePart = sessionName
+      ? truncateDisplay(sessionName, 36)
+      : "";
     const parts: { t: string; fg: RGB; bold?: boolean }[] = [
       { t: t("tui.brand"), fg: C.accent, bold: true },
       { t: " ", fg: C.muted },
@@ -1240,8 +1305,8 @@ export function createTui(
         { t: " │ ", fg: C.border },
         {
           t: namePart,
-          fg: mode === "session-rename" ? C.accent : C.title,
-          bold: mode === "session-rename",
+          fg: C.title,
+          bold: false,
         },
       );
     }
@@ -1281,14 +1346,101 @@ export function createTui(
     return status;
   }
 
+  /** Session alias / idle chrome — never a toast notice. */
+  function isAmbientLabel(msg: string): boolean {
+    const st = msg.trim();
+    if (!st) return true;
+    if (sessionName && st === sessionName.trim()) return true;
+    // Default auto name: "Meeting 2026-08-03 22:04" (and localized variants)
+    if (/^Meeting \d{4}-\d{2}-\d{2}/.test(st)) return true;
+    // Continue banner: "Resume {name} · +Ns" / 续录 / 続行
+    if (/[·+]\s*\+?\d+s\s*$/i.test(st) && (st.includes("Resume") || st.includes("续录") || st.includes("続行"))) {
+      return true;
+    }
+    return false;
+  }
+
   function isIdleStatus(msg: string): boolean {
     const st = msg.trim();
     if (!st) return true;
     if (aiBusy) return false;
+    if (isAmbientLabel(st)) return true;
     if (st === t("status.listening") || st === t("tui.listening")) return true;
     if (st === t("status.listeningLive")) return true;
     if (st === t("status.starting")) return true;
+    if (st === t("status.paused") || st === t("status.pausedHint")) return true;
     return false;
+  }
+
+  /** Continuous / ambient status stays in message bar; one-shot tips become toasts. */
+  function isProgressStatus(msg: string): boolean {
+    const st = msg.trim();
+    if (!st) return true;
+    if (isIdleStatus(st)) return true;
+    if (isAmbientLabel(st)) return true;
+    if (aiBusy) return true;
+    // In-mode guides (merge multi-select) stay non-modal
+    if (mode === "speaker-merge") return true;
+    if (/…$|\.\.\.$|loading|启动|停止|连接|加入|监听|暂停|处理|翻译中|总结中|starting|stopping|joining|connecting|processing/i.test(st)) {
+      return true;
+    }
+    return false;
+  }
+
+  function clearToastTimer(): void {
+    if (toastTimer) {
+      clearTimeout(toastTimer);
+      toastTimer = null;
+    }
+  }
+
+  function showToast(
+    kind: "error" | "warn" | "info",
+    title: string,
+    body: string,
+    opts?: { confirm?: boolean },
+  ): void {
+    clearToastTimer();
+    toast = { kind, title, body, confirm: opts?.confirm };
+    // Keep continuous merge guide in status when not a confirm toast
+    if (!opts?.confirm) status = "";
+    dirty = true;
+    paint();
+    // Ordinary notices auto-dismiss after 3s (confirm waits for y/n)
+    if (!opts?.confirm) {
+      const snap = toast;
+      toastTimer = setTimeout(() => {
+        if (toast === snap) dismissToast();
+      }, 3000);
+      toastTimer.unref?.();
+    }
+  }
+
+  function dismissToast(): void {
+    if (!toast) return;
+    clearToastTimer();
+    toast = null;
+    dirty = true;
+    paint();
+  }
+
+  /** Route one-shot user notice to top-right popup. */
+  function notify(msg: string, kind?: "error" | "warn" | "info"): void {
+    const lower = msg.toLowerCase();
+    const k =
+      kind ||
+      (/fail|error|错误|失败|无法|不能|invalid|missing|不足/i.test(lower)
+        ? "error"
+        : /warn|取消|放弃|请|need|cannot|无法|不可/i.test(lower)
+          ? "warn"
+          : "info");
+    const title =
+      k === "error"
+        ? t("resume.alert.errTitle")
+        : k === "warn"
+          ? t("resume.alert.hint")
+          : t("resume.alert.hint");
+    showToast(k, title, msg);
   }
 
   function statusSeverity(msg: string): "ok" | "warn" | "err" | "info" {
@@ -1365,38 +1517,30 @@ export function createTui(
     if (!r) return;
     const focused =
       focusPanel === "speakers" &&
-      (mode === "speaker-list" || mode === "speaker-rename");
+      (mode === "speaker-list" ||
+        mode === "speaker-rename" ||
+        mode === "speaker-merge");
     // wipe interior first so transcript overflow never lingers here
     clearPanelInterior(buf, r);
     drawBox(buf, r, t("tui.speakersTitle"), focused ? C.accent : C.border, C.cyan);
-    const innerX = r.x + 1;
-    // leave 1 col for ✎ so names never collide with it or the border
-    const innerW = Math.max(1, r.w - 2);
+    // 1 col inset from left border; leave 1 col for ✎ before right border
+    const innerX = r.x + 2;
+    const innerW = Math.max(1, r.w - 4);
     const textW = Math.max(1, innerW - 2);
     let y = r.y + 1;
     const yMax = r.y + r.h - 2; // last interior row
 
-    putText(
-      buf,
-      innerX,
-      y,
-      truncateDisplay(t("tui.speakersHint1"), innerW),
-      { fg: C.dim, dim: true },
-      innerW,
-    );
-    y++;
-    if (y <= yMax) {
-      putText(
-        buf,
-        innerX,
-        y,
-        truncateDisplay(t("tui.speakersHint2"), innerW),
-        { fg: C.dim, dim: true },
-        innerW,
-      );
+    // One logical line per hint (\n in locale); wrap if still too wide
+    const hintLines = [t("tui.speakersHint1"), t("tui.speakersHint2")]
+      .flatMap((s) => s.split(/\r?\n/))
+      .filter((s) => s.length > 0)
+      .flatMap((s) => wrapDisplay(s, innerW));
+    for (const hl of hintLines) {
+      if (y > yMax) break;
+      putText(buf, innerX, y, hl, { fg: C.dim, dim: true }, innerW);
       y++;
     }
-    y++;
+    if (y <= yMax) y++; // gap before list
 
     const list = speakerList();
     const visible = Math.max(1, yMax - y);
@@ -1421,26 +1565,39 @@ export function createTui(
         const idx = speakerScroll + i;
         const sel = focused && idx === speakerSel;
         const dot = sp.isActive ? "●" : "○";
-        const name =
-          mode === "speaker-rename" && sel
-            ? renameDraft + "▌"
-            : sp.displayName;
-        // name area only — never write into the ✎ column or past panel
-        const line = truncateDisplay(`${dot} ${name}`, textW);
+        const inMerge = mode === "speaker-merge";
+        const marked = inMerge && mergeSelected.has(sp.id);
+        // Merge mode: all hollow white dots; marked → arrow
+        const rowDot = inMerge ? (marked ? "→" : "○") : dot;
+        const name = sp.displayName;
+        const line = truncateDisplay(`${rowDot} ${name}`, textW);
         const style: Partial<Cell> = {
-          fg: sel ? C.white : sp.color,
-          bold: sel || sp.isActive,
+          fg: inMerge
+            ? marked
+              ? C.warn
+              : C.white
+            : sel
+              ? C.white
+              : sp.color,
+          bold: sel || sp.isActive || marked,
           bg: sel ? C.selectBg : undefined,
         };
         if (sel) {
           fillRect(buf, { x: innerX, y, w: innerW, h: 1 }, { bg: C.selectBg });
         }
         putText(buf, innerX, y, line, style, textW);
-        // pencil sits in the last interior column (before right border)
-        putChar(buf, innerX + innerW - 1, y, "✎", {
-          fg: C.dim,
-          bg: sel ? C.selectBg : undefined,
-        }, innerX + innerW);
+        // pencil just inside right border (after content padding)
+        putChar(
+          buf,
+          r.x + r.w - 2,
+          y,
+          "✎",
+          {
+            fg: C.dim,
+            bg: sel ? C.selectBg : undefined,
+          },
+          r.x + r.w - 1,
+        );
         y++;
       }
     }
@@ -1817,6 +1974,112 @@ export function createTui(
     }
   }
 
+  function renderRenameModal(buf: Cell[][], layout: Layout): void {
+    const W = layout.statusBar.w || cols();
+    const H = (layout.footer.y || rows() - 1) + 1;
+    const boxW = Math.min(56, Math.max(40, W - 8));
+    const boxH = 6;
+    const r: Rect = {
+      x: Math.max(1, Math.floor((W - boxW) / 2)),
+      y: Math.max(1, Math.floor((H - boxH) / 2)),
+      w: boxW,
+      h: boxH,
+    };
+    fillRect(buf, r, { bg: C.panelBg });
+    const isSession = mode === "session-rename";
+    const title = isSession
+      ? t("resume.renameTitle")
+      : t("footer.rename");
+    drawBox(buf, r, title, C.accent, C.accent);
+    // Actions live on the bottom border (same as merge confirm)
+    drawBottomBorderActions(buf, r, C.accent);
+    const draft = isSession ? sessionRenameDraft : renameDraft;
+    const fieldW = Math.max(8, r.w - 6);
+    const field = truncateDisplay(draft, fieldW - 1) + "▌";
+    putText(buf, r.x + 3, r.y + 2, field, {
+      fg: C.title,
+      bold: true,
+      bg: C.panelBg,
+    }, fieldW);
+  }
+
+  /**
+ * Ordinary notice → top-right, auto 3s dismiss.
+ * Merge confirm → same centered dialog as session rename;
+ * Save/Cancel embedded on the bottom border line.
+ */
+  function renderToastModal(buf: Cell[][], layout: Layout): void {
+    if (!toast) return;
+    const W = layout.statusBar.w || cols();
+    const H = (layout.footer.y || rows() - 1) + 1;
+    const centered = Boolean(toast.confirm);
+    const boxW = centered
+      ? Math.min(56, Math.max(40, Math.floor(W * 0.5)))
+      : Math.min(42, Math.max(28, Math.floor(W * 0.32)));
+    const kind = toast.kind;
+    const accent =
+      kind === "error" ? C.err : kind === "warn" ? C.warn : C.cyan;
+    const icon = kind === "error" ? "✕" : kind === "warn" ? "!" : "i";
+    const bodyLines = wrapDisplay(toast.body.replace(/\r/g, ""), boxW - 6);
+    const shown = bodyLines.slice(0, 6);
+    const boxH = Math.min(H - 3, (centered ? 5 : 5) + shown.length);
+    const r: Rect = centered
+      ? {
+          x: Math.max(1, Math.floor((W - boxW) / 2)),
+          y: Math.max(1, Math.floor((H - boxH) / 2)),
+          w: boxW,
+          h: boxH,
+        }
+      : {
+          x: Math.max(1, W - boxW - 1),
+          y: Math.max(1, 1),
+          w: boxW,
+          h: boxH,
+        };
+    fillRect(buf, r, { bg: C.panelBg });
+    if (centered) {
+      // Same chrome as session-name edit
+      drawBox(buf, r, toast.title, C.accent, C.accent);
+      drawBottomBorderActions(buf, r, C.accent);
+      let y = r.y + 2;
+      for (const wl of shown) {
+        if (y >= r.y + r.h - 1) break;
+        putText(buf, r.x + 2, y, truncateDisplay(wl, boxW - 4), {
+          fg: C.title,
+          bg: C.panelBg,
+        }, boxW - 4);
+        y++;
+      }
+    } else {
+      drawBox(buf, r, undefined, accent);
+      putText(
+        buf,
+        r.x + 2,
+        r.y + 1,
+        truncateDisplay(`${icon}  ${toast.title}`, boxW - 4),
+        { fg: accent, bold: true, bg: C.panelBg },
+        boxW - 4,
+      );
+      let y = r.y + 3;
+      for (const wl of shown) {
+        if (y >= r.y + r.h - 2) break;
+        putText(buf, r.x + 2, y, truncateDisplay(wl, boxW - 4), {
+          fg: C.title,
+          bg: C.panelBg,
+        }, boxW - 4);
+        y++;
+      }
+      putText(
+        buf,
+        r.x + 2,
+        r.y + r.h - 2,
+        truncateDisplay(t("resume.autoDismissHint"), boxW - 4),
+        { fg: C.dim, dim: true, bg: C.panelBg },
+        boxW - 4,
+      );
+    }
+  }
+
   function renderFooter(buf: Cell[][], layout: Layout): void {
     const r = layout.footer;
     fillRect(buf, r, { bg: C.panelBg });
@@ -1840,13 +2103,20 @@ export function createTui(
       }
     } else if (mode === "speaker-rename" || mode === "session-rename") {
       hints = [
-        { k: "Enter", v: t("footer.confirm") },
+        { k: "Enter", v: t("footer.save") },
         { k: "Esc", v: t("footer.cancel") },
+      ];
+    } else if (mode === "speaker-merge") {
+      hints = [
+        { k: "↑↓", v: t("footer.select") },
+        { k: "Space", v: t("footer.mergeSpace") },
+        { k: "Esc", v: t("footer.close") },
       ];
     } else if (mode === "speaker-list") {
       hints = [
         { k: "↑↓", v: t("footer.select") },
         { k: "Enter", v: t("footer.rename") },
+        { k: "m", v: t("footer.merge") },
         { k: "a", v: t("footer.addAlias") },
         { k: "1-9", v: t("footer.assign") },
         { k: "Tab", v: t("footer.switch") },
@@ -2090,12 +2360,21 @@ export function createTui(
     renderTranscript(next, layout);
     if (layout.speakerList) renderSpeakerList(next, layout);
     if (layout.sidePanel) renderSidePanel(next, layout);
-    if (layout.messageBar) renderMessageBar(next, layout);
+    if (layout.messageBar && !toast) renderMessageBar(next, layout);
     renderFooter(next, layout);
 
     if (mode === "settings" || mode === "settings-edit") {
       dimBackground(next);
       renderSettingsDialog(next, layout);
+    } else if (mode === "speaker-rename" || mode === "session-rename") {
+      dimBackground(next);
+      renderRenameModal(next, layout);
+    }
+
+    // Confirm (merge save) → center + dim; ordinary tips → top-right, no dim
+    if (toast) {
+      if (toast.confirm) dimBackground(next);
+      renderToastModal(next, layout);
     }
 
     flushDiff(prevBuf, next, stdout);
@@ -2139,7 +2418,7 @@ export function createTui(
     const next = SOURCES[(i + dir + SOURCES.length) % SOURCES.length]!;
     if (next !== args.source) {
       args.source = next;
-      status = t("status.switchSource", { name: sourceLabel(next) });
+      notify(t("status.switchSource", { name: sourceLabel(next) }));
       persist();
     }
   }
@@ -2149,11 +2428,13 @@ export function createTui(
     if (args.ai.enabled && !args.ai.correct && !args.ai.translateTo) {
       args.ai.correct = true;
     }
-    status = args.ai.enabled
-      ? aiActive(args.ai)
-        ? t("status.aiOn")
-        : t("status.aiEnabled")
-      : t("status.aiDisabled");
+    notify(
+      args.ai.enabled
+        ? aiActive(args.ai)
+          ? t("status.aiOn")
+          : t("status.aiEnabled")
+        : t("status.aiDisabled"),
+    );
     persist();
   }
 
@@ -2165,17 +2446,21 @@ export function createTui(
     const next = opts[(i + dir + opts.length) % opts.length]!;
     args.ai.translateTo = next;
     if (next && !args.ai.enabled) args.ai.enabled = true;
-    status = t("status.aiTranslate", {
-      lang: translateLangLabel(next),
-    });
+    notify(
+      t("status.aiTranslate", {
+        lang: translateLangLabel(next),
+      }),
+    );
     persist();
   }
 
   function toggleShare(): void {
     args.share.enabled = !args.share.enabled;
-    status = args.share.enabled
-      ? t("status.shareOn", { port: args.share.port })
-      : t("status.shareOff");
+    notify(
+      args.share.enabled
+        ? t("status.shareOn", { port: args.share.port })
+        : t("status.shareOff"),
+    );
     persist();
   }
 
@@ -2185,7 +2470,7 @@ export function createTui(
       Math.max(1024, args.share.port + dir),
     );
     if (!args.share.enabled) args.share.enabled = true;
-    status = t("status.sharePort", { port: args.share.port });
+    notify(t("status.sharePort", { port: args.share.port }));
     persist();
   }
 
@@ -2193,7 +2478,7 @@ export function createTui(
     args.vad.threshold = round2(
       Math.min(0.95, Math.max(0.05, args.vad.threshold + dir * 0.05)),
     );
-    status = t("status.vadThreshold", { v: args.vad.threshold.toFixed(2) });
+    notify(t("status.vadThreshold", { v: args.vad.threshold.toFixed(2) }));
     persist();
   }
 
@@ -2201,7 +2486,7 @@ export function createTui(
     args.vad.minSpeechDuration = round2(
       Math.min(5, Math.max(0.1, args.vad.minSpeechDuration + dir * 0.05)),
     );
-    status = t("status.minSpeech", { v: args.vad.minSpeechDuration.toFixed(2) });
+    notify(t("status.minSpeech", { v: args.vad.minSpeechDuration.toFixed(2) }));
     persist();
   }
 
@@ -2209,7 +2494,7 @@ export function createTui(
     args.vad.minSilenceDuration = round2(
       Math.min(5, Math.max(0.1, args.vad.minSilenceDuration + dir * 0.05)),
     );
-    status = t("status.silenceSplit", { v: args.vad.minSilenceDuration.toFixed(2) });
+    notify(t("status.silenceSplit", { v: args.vad.minSilenceDuration.toFixed(2) }));
     persist();
   }
 
@@ -2218,7 +2503,7 @@ export function createTui(
       120,
       Math.max(2, args.vad.maxSpeechDuration + dir),
     );
-    status = t("status.maxSpeech", { v: args.vad.maxSpeechDuration });
+    notify(t("status.maxSpeech", { v: args.vad.maxSpeechDuration }));
     persist();
   }
 
@@ -2228,14 +2513,14 @@ export function createTui(
     if (i < 0) i = 1;
     i = (i + dir + VAD_WINDOWS.length) % VAD_WINDOWS.length;
     args.vad.windowSize = VAD_WINDOWS[i]!;
-    status = t("status.vadWindow", { v: args.vad.windowSize });
+    notify(t("status.vadWindow", { v: args.vad.windowSize }));
     persist();
   }
 
   function toggleRecord(): void {
     if (args.record) {
       args.record = undefined;
-      status = t("status.stopRecord");
+      notify(t("status.stopRecord"));
     } else {
       const dir = (args.recordDir || defaultRecordDir()).replace(/[/\\]+$/, "");
       // Session dirs use fixed audio.wav; otherwise timestamped file
@@ -2247,7 +2532,7 @@ export function createTui(
             .toISOString()
             .replace(/[:.]/g, "-")
             .slice(0, 19)}`;
-      status = t("status.startRecord", { path: args.record });
+      notify(t("status.startRecord", { path: args.record }));
     }
   }
 
@@ -2267,7 +2552,7 @@ export function createTui(
     }
     const n = (i + dir + RECORD_DIR_PRESETS.length) % RECORD_DIR_PRESETS.length;
     args.recordDir = normalizeRecordDir(RECORD_DIR_PRESETS[n]!);
-    status = t("status.recordDir", { path: args.recordDir });
+    notify(t("status.recordDir", { path: args.recordDir }));
     persist();
   }
 
@@ -2310,44 +2595,44 @@ export function createTui(
       case "aiBase": {
         const n = normalizeBaseUrl(v);
         if (!n) {
-          status = t("status.baseUrlInvalid");
+          notify(t("status.baseUrlInvalid"), "error");
         } else {
           args.ai.baseUrl = n;
-          status = t("status.baseUrlSaved");
+          notify(t("status.baseUrlSaved"));
           persist();
         }
         break;
       }
       case "aiKey":
         args.ai.apiKey = v;
-        status = v ? t("status.apiKeySaved") : t("status.apiKeyCleared");
+        notify(v ? t("status.apiKeySaved") : t("status.apiKeyCleared"));
         persist();
         break;
       case "aiModel":
         if (v) {
           args.ai.model = v;
-          status = t("status.modelSet", { model: v });
+          notify(t("status.modelSet", { model: v }));
           persist();
         }
         break;
       case "recDir":
         args.recordDir = normalizeRecordDir(v || defaultRecordDir());
-        status = t("status.recordDir", { path: args.recordDir });
+        notify(t("status.recordDir", { path: args.recordDir }));
         persist();
         break;
       case "shareHost":
         args.share.host = v || "0.0.0.0";
-        status = t("status.shareHost", { host: args.share.host });
+        notify(t("status.shareHost", { host: args.share.host }));
         persist();
         break;
       case "sharePort": {
         const p = parseInt(v, 10);
         if (Number.isFinite(p) && p >= 1024 && p <= 65535) {
           args.share.port = p;
-          status = t("status.sharePort", { port: p });
+          notify(t("status.sharePort", { port: p }));
           persist();
         } else {
-          status = t("status.portInvalid");
+          notify(t("status.portInvalid"), "error");
         }
         break;
       }
@@ -2384,10 +2669,10 @@ export function createTui(
         break;
       case "aiProvider": {
         args.ai = cycleAiProvider(args.ai, dir);
-        status = t("settings.provider.applied", {
+        notify(t("settings.provider.applied", {
           name: aiProviderLabel(args.ai),
           model: args.ai.model || "—",
-        });
+        }));
         persist();
         break;
       }
@@ -2442,10 +2727,10 @@ export function createTui(
         break;
       case "aiProvider": {
         args.ai = cycleAiProvider(args.ai, 1);
-        status = t("settings.provider.applied", {
+        notify(t("settings.provider.applied", {
           name: aiProviderLabel(args.ai),
           model: args.ai.model || "—",
-        });
+        }));
         persist();
         break;
       }
@@ -2488,16 +2773,18 @@ export function createTui(
     if (speakerSel < 0) speakerSel = 0;
     mode = "speaker-list";
     focusPanel = "speakers";
-    status = t("status.speakerAdded");
+    notify(t("status.speakerAdded"));
   }
 
   function beginRenameSession(): void {
     if (!sessionDir) {
-      status = t("resume.status.renameFail");
+      notify(t("resume.status.renameFail"), "error");
       return;
     }
-    sessionRenameDraft = sessionName || sessionId || "";
+    // Edit alias only — id stays auto-generated and hidden
+    sessionRenameDraft = sessionName || "";
     mode = "session-rename";
+    status = "";
   }
 
   function commitRenameSession(): void {
@@ -2508,7 +2795,7 @@ export function createTui(
     }
     const next = sessionRenameDraft.trim();
     if (!next) {
-      status = t("resume.status.renameEmpty");
+      notify(t("resume.status.renameEmpty"), "warn");
       mode = "normal";
       sessionRenameDraft = "";
       return;
@@ -2516,10 +2803,11 @@ export function createTui(
     const meta = renameSession(sessionDir, next);
     if (meta) {
       sessionName = meta.name;
-      status = t("resume.status.renamed", { name: meta.name });
+      // Alias update is silent chrome — no toast for the new default name itself
+      notify(t("resume.status.renamed", { name: meta.name }));
       opts.onSessionRenamed?.(meta.name);
     } else {
-      status = t("resume.status.renameFail");
+      notify(t("resume.status.renameFail"), "error");
     }
     mode = "normal";
     sessionRenameDraft = "";
@@ -2536,15 +2824,26 @@ export function createTui(
     if (!sp) return;
     renameDraft = sp.displayName;
     mode = "speaker-rename";
+    status = "";
   }
 
   function commitRenameSpeaker(): void {
     const list = speakerList();
     const sp = list[speakerSel];
     if (sp && renameDraft.trim()) {
-      sp.displayName = renameDraft.trim();
+      const name = renameDraft.trim();
+      sp.displayName = name;
       if (sp.manual) sp.alias = sp.displayName;
-      status = t("status.renamed", { name: sp.displayName });
+      // Auto speakers (spk_N): promote / update global voiceprint roster
+      const m = /^spk_(\d+)$/.exec(sp.id);
+      if (m && opts.onSpeakerRenamed) {
+        opts.onSpeakerRenamed(parseInt(m[1]!, 10), name);
+        notify(t("status.speakerSavedGlobal", { name }));
+      } else {
+        notify(t("status.renamed", { name: sp.displayName }));
+      }
+    } else if (sp && !renameDraft.trim()) {
+      notify(t("resume.status.renameEmpty"), "warn");
     }
     renameDraft = "";
     mode = "speaker-list";
@@ -2560,28 +2859,185 @@ export function createTui(
     const sp = list[speakerSel];
     if (!sp) return;
     if (!sp.manual) {
-      status = t("status.cannotDeleteAuto");
+      notify(t("status.cannotDeleteAuto"), "warn");
       return;
     }
     if (sp.segmentCount > 0) {
-      status = t("status.cannotDeleteBound");
+      notify(t("status.cannotDeleteBound"), "warn");
       return;
     }
     speakers.delete(sp.id);
     speakerSel = Math.max(0, Math.min(speakerSel, speakers.size - 1));
-    status = t("status.deletedAlias");
+    notify(t("status.deletedAlias"));
+  }
+
+  function beginMergeSpeaker(): void {
+    const list = speakerList();
+    if (list.length < 2) {
+      notify(t("status.mergeNeedTwo"), "warn");
+      return;
+    }
+    mergeSelected = new Set();
+    mergeConfirm = false;
+    mode = "speaker-merge";
+    focusPanel = "speakers";
+    status = t("status.mergeHint");
+  }
+
+  function toggleMergeMark(): void {
+    const list = speakerList();
+    const sp = list[speakerSel];
+    if (!sp) return;
+    if (mergeSelected.has(sp.id)) mergeSelected.delete(sp.id);
+    else mergeSelected.add(sp.id);
+    status = t("status.mergeHint");
+  }
+
+  function requestMergeExit(): void {
+    if (mergeSelected.size === 0) {
+      discardMerge();
+      return;
+    }
+    if (mergeSelected.size < 2) {
+      notify(t("status.mergeNeedTwo"), "warn");
+      return;
+    }
+    mergeConfirm = true;
+    // Confirm save in top-right toast (y / n)
+    showToast(
+      "warn",
+      t("footer.merge"),
+      t("status.mergeSaveAsk", { n: mergeSelected.size }),
+      { confirm: true },
+    );
+  }
+
+  function discardMerge(): void {
+    mergeSelected = new Set();
+    mergeConfirm = false;
+    mode = "speaker-list";
+    notify(t("status.mergeDiscarded"), "warn");
+  }
+
+  /**
+   * Multi-select merge: first marked speaker is the keep target;
+   * all other marked speakers are merged into it.
+   */
+  function saveMerge(): void {
+    const list = speakerList();
+    const ordered = list.filter((s) => mergeSelected.has(s.id));
+    if (ordered.length < 2) {
+      notify(t("status.mergeNeedTwo"), "warn");
+      mergeConfirm = false;
+      return;
+    }
+    const target = ordered[0]!;
+    const sources = ordered.slice(1);
+    let segs = 0;
+    for (const source of sources) {
+      for (const seg of segments) {
+        if (seg.speakerId === source.id) {
+          seg.speakerId = target.id;
+          segs += 1;
+        }
+      }
+      target.segmentCount += source.segmentCount;
+      if (source.isActive) markActiveSpeaker(target.id);
+      speakers.delete(source.id);
+      if (opts.sessionDir) {
+        try {
+          persistSpeakerMergeToSession(opts.sessionDir, source.id, target.id);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    mergeSelected = new Set();
+    mergeConfirm = false;
+    mode = "speaker-list";
+    const nextList = speakerList();
+    const ti = nextList.findIndex((s) => s.id === target.id);
+    speakerSel = ti >= 0 ? ti : 0;
+    notify(t("status.mergeDone", {
+      n: ordered.length,
+      to: target.displayName,
+      segs,
+    }));
+  }
+
+  function persistSpeakerMergeToSession(
+    dir: string,
+    fromId: string,
+    toId: string,
+  ): void {
+    const fromSpk = parseSpkNum(fromId);
+    const toSpk = parseSpkNum(toId);
+    if (fromSpk == null || toSpk == null) return;
+    const tf = path.join(dir, "transcript.jsonl");
+    if (!fs.existsSync(tf)) return;
+    const lines = fs.readFileSync(tf, "utf8").split("\n");
+    let dirty = false;
+    const out = lines.map((line) => {
+      if (!line.trim()) return line;
+      try {
+        const row = JSON.parse(line) as {
+          spk?: number | null;
+          speakerId?: string | null;
+        };
+        let ch = false;
+        if (row.spk === fromSpk) {
+          row.spk = toSpk;
+          ch = true;
+        }
+        if (row.speakerId === fromId || row.speakerId === `spk_${fromSpk}`) {
+          row.speakerId = toId;
+          ch = true;
+        }
+        if (ch) {
+          dirty = true;
+          return JSON.stringify(row);
+        }
+      } catch {
+        /* keep line */
+      }
+      return line;
+    });
+    if (dirty) fs.writeFileSync(tf, out.join("\n"), "utf8");
+
+    // speakers.json: remove source, keep target
+    const sf = path.join(dir, "speakers.json");
+    if (fs.existsSync(sf)) {
+      try {
+        const arr = JSON.parse(fs.readFileSync(sf, "utf8")) as Array<{
+          id?: string;
+          spk?: number | null;
+          displayName?: string;
+        }>;
+        const filtered = arr.filter(
+          (s) => s.id !== fromId && s.spk !== fromSpk,
+        );
+        fs.writeFileSync(sf, JSON.stringify(filtered, null, 2) + "\n", "utf8");
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  function parseSpkNum(id: string): number | null {
+    const m = /^spk_(\d+)$/.exec(id);
+    return m ? parseInt(m[1]!, 10) : null;
   }
 
   function assignLastSegmentToSpeaker(index1based: number): void {
     const list = speakerList();
     const sp = list[index1based - 1];
     if (!sp) {
-      status = t("status.noSpeakerN", { n: index1based });
+      notify(t("status.noSpeakerN", { n: index1based }), "warn");
       return;
     }
     const last = segments[segments.length - 1];
     if (!last) {
-      status = t("status.noSegment");
+      notify(t("status.noSegment"), "warn");
       return;
     }
     if (last.speakerId) {
@@ -2590,7 +3046,7 @@ export function createTui(
     }
     last.speakerId = sp.id;
     sp.segmentCount += 1;
-    status = t("status.assigned", { name: sp.displayName });
+    notify(t("status.assigned", { name: sp.displayName }));
   }
 
   function markActiveSpeaker(id: string | null): void {
@@ -2603,23 +3059,59 @@ export function createTui(
 
   // ── input ──────────────────────────────────────────────
 
+  /** True for a single printable grapheme (ASCII space+, CJK, etc.). */
+  function isPrintableKey(key: string): boolean {
+    if (!key || key.startsWith("\x1b")) return false;
+    if (key === "\x7f" || key === "\b" || key === "\t") return false;
+    // One code point, not a control char
+    const cp = key.codePointAt(0);
+    if (cp == null || cp < 0x20) return false;
+    // Reject if more than one code point (shouldn't happen from feeder)
+    return [...key].length === 1;
+  }
+
   function onKey(key: string): void {
     if (closed) return;
 
-    // settings text edit
+    // Toast: confirm (y/n) or any-key dismiss; Ctrl+C still quits
+    if (toast) {
+      if (key === "\x03" || key === "\x04") {
+        opts.onQuit();
+        return;
+      }
+      if (toast.confirm) {
+        if (key === "y" || key === "Y" || key === "\r" || key === "\n") {
+          toast = null;
+          saveMerge();
+          dirty = true;
+          return;
+        }
+        if (key === "n" || key === "N" || key === "\x1b") {
+          toast = null;
+          discardMerge();
+          dirty = true;
+          return;
+        }
+        return; // wait for y/n
+      }
+      dismissToast();
+      return;
+    }
+
+    // settings text edit — exclusive; swallow CSI / shortcuts
     if (mode === "settings-edit") {
       if (key === "\x1b") {
         cancelEdit();
         dirty = true;
         return;
       }
+      if (key.startsWith("\x1b")) return; // arrows etc.
       if (key === "\r" || key === "\n") {
         commitEdit();
         dirty = true;
         return;
       }
       if (key === "\x15") {
-        // Ctrl+U
         editDraft = "";
         dirty = true;
         return;
@@ -2629,20 +3121,26 @@ export function createTui(
         dirty = true;
         return;
       }
-      if (key.length === 1 && key >= " ") {
+      if (key === "\t") return;
+      if (isPrintableKey(key)) {
         if (editDraft.length < 200) editDraft += key;
         dirty = true;
       }
       return;
     }
 
-    // speaker rename
+    // speaker rename modal — exclusive input
     if (mode === "speaker-rename") {
+      if (key === "\x03" || key === "\x04") {
+        opts.onQuit();
+        return;
+      }
       if (key === "\x1b") {
         cancelRenameSpeaker();
         dirty = true;
         return;
       }
+      if (key.startsWith("\x1b")) return;
       if (key === "\r" || key === "\n") {
         commitRenameSpeaker();
         dirty = true;
@@ -2653,20 +3151,26 @@ export function createTui(
         dirty = true;
         return;
       }
-      if (key.length === 1 && key >= " ") {
-        if (renameDraft.length < 40) renameDraft += key;
+      if (key === "\t") return;
+      if (isPrintableKey(key)) {
+        if (renameDraft.length < 80) renameDraft += key;
         dirty = true;
       }
       return;
     }
 
-    // session name rename
+    // session name rename modal — exclusive input
     if (mode === "session-rename") {
+      if (key === "\x03" || key === "\x04") {
+        opts.onQuit();
+        return;
+      }
       if (key === "\x1b") {
         cancelRenameSession();
         dirty = true;
         return;
       }
+      if (key.startsWith("\x1b")) return;
       if (key === "\r" || key === "\n") {
         commitRenameSession();
         dirty = true;
@@ -2677,7 +3181,8 @@ export function createTui(
         dirty = true;
         return;
       }
-      if (key.length === 1 && key >= " ") {
+      if (key === "\t") return;
+      if (isPrintableKey(key)) {
         if (sessionRenameDraft.length < 80) sessionRenameDraft += key;
         dirty = true;
       }
@@ -2732,6 +3237,35 @@ export function createTui(
       return;
     }
 
+    // speaker merge: multi-select in speaker panel only
+    // (save confirm is handled by toast.confirm above)
+    if (mode === "speaker-merge") {
+      if (key === "\x1b") {
+        requestMergeExit();
+        dirty = true;
+        return;
+      }
+      if (key === "\x1b[A" || key === "k") {
+        const n = speakerList().length;
+        if (n) speakerSel = (speakerSel + n - 1) % n;
+        dirty = true;
+        return;
+      }
+      if (key === "\x1b[B" || key === "j") {
+        const n = speakerList().length;
+        if (n) speakerSel = (speakerSel + 1) % n;
+        dirty = true;
+        return;
+      }
+      if (key === " ") {
+        toggleMergeMark();
+        dirty = true;
+        return;
+      }
+      // stay in speaker panel — block tab/other shortcuts
+      return;
+    }
+
     // speaker list focus
     if (mode === "speaker-list") {
       if (key === "\t") {
@@ -2760,6 +3294,11 @@ export function createTui(
       }
       if (key === "\r") {
         beginRenameSpeaker();
+        dirty = true;
+        return;
+      }
+      if (key === "m" || key === "M") {
+        beginMergeSpeaker();
         dirty = true;
         return;
       }
@@ -2874,70 +3413,13 @@ export function createTui(
     }
   }
 
-  // key reader
-  let keyBuf = "";
-  let keyTimer: NodeJS.Timeout | null = null;
-
-  function feedKeys(chunk: Buffer | string): void {
-    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk, "utf8");
-    for (let i = 0; i < buf.length; i++) {
-      const b = buf[i]!;
-      const ch = String.fromCharCode(b);
-
-      if (b === 0x1b) {
-        keyBuf = "\x1b";
-        if (keyTimer) clearTimeout(keyTimer);
-        keyTimer = setTimeout(() => {
-          if (keyBuf) onKey(keyBuf);
-          keyBuf = "";
-        }, 40);
-        continue;
-      }
-      if (keyBuf) {
-        keyBuf += ch;
-        if (
-          keyBuf.length >= 3 &&
-          (keyBuf.startsWith("\x1b[") || keyBuf.startsWith("\x1bO"))
-        ) {
-          if (/[A-Za-z~]$/.test(keyBuf)) {
-            if (keyTimer) clearTimeout(keyTimer);
-            onKey(keyBuf);
-            keyBuf = "";
-          }
-        } else if (keyBuf.length > 8) {
-          if (keyTimer) clearTimeout(keyTimer);
-          onKey(keyBuf);
-          keyBuf = "";
-        }
-        continue;
-      }
-
-      if (b === 0x03 || b === 0x04) {
-        onKey(ch);
-        continue;
-      }
-      // Ctrl+U
-      if (b === 0x15) {
-        onKey(ch);
-        continue;
-      }
-      if (b === 0x7f || b === 0x08) {
-        onKey(ch);
-        continue;
-      }
-      if (b >= 0x20 || b === 0x0d || b === 0x0a || b === 0x09) {
-        if (b >= 0x80) {
-          const rest = buf.slice(i).toString("utf8");
-          for (const c of rest) onKey(c);
-          break;
-        }
-        onKey(ch);
-      }
-    }
-  }
+  // key reader — UTF-8 safe (CJK 不乱码)
+  const keyFeeder = createKeyFeeder(onKey);
+  const feedKeys = keyFeeder.feed;
 
   function restoreTerminal(): void {
     try {
+      keyFeeder.reset();
       stdin.removeListener("data", feedKeys);
       if (stdin.isTTY) stdin.setRawMode?.(false);
       stdin.pause();
@@ -3130,9 +3612,14 @@ export function createTui(
       paint();
     },
     setStatus(msg: string) {
-      status = msg;
-      dirty = true;
-      paint();
+      // Continuous / ambient → message bar; one-shot tips → center toast
+      if (isProgressStatus(msg)) {
+        status = msg;
+        dirty = true;
+        paint();
+      } else {
+        notify(msg);
+      }
     },
     setDevice(name: string) {
       deviceName = name;
@@ -3167,7 +3654,12 @@ export function createTui(
       if (closed) return;
       closed = true;
       clearInterval(raf);
-      if (keyTimer) clearTimeout(keyTimer);
+      clearToastTimer();
+      try {
+        keyFeeder.reset();
+      } catch {
+        /* ignore */
+      }
       try {
         flushSaveSettings(() => snapshotFromArgs(args));
       } catch {
