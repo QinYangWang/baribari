@@ -199,11 +199,15 @@ export function appendSessionSegment(
   seg: Segment,
   speakers?: SessionSpeaker[],
 ): void {
+  // Sessions store finals only (partials are live-UI ephemera)
+  if (seg.kind === "partial") return;
   // upsert by id: if AI finalize rewrites same id, replace last matching line
+  const end =
+    seg.end != null && Number.isFinite(seg.end) ? seg.end : seg.start;
   const row: SessionSegment = {
     id: seg.id || `seg_${Date.now()}`,
     start: seg.start,
-    end: seg.end,
+    end,
     wallIso: seg.wallIso || seg.wall.toISOString(),
     spk: seg.spk,
     text: seg.text,
@@ -817,9 +821,11 @@ function makeWriter(
     timeOffset,
     continuing,
     onSegment(seg, speakers) {
-      if (seg.pending) return;
+      // Finals only — ignore AI-pending and live partials
+      if (seg.pending || seg.kind === "partial") return;
       const shifted: Segment = {
         ...seg,
+        kind: "final",
         start: (seg.start || 0) + timeOffset,
         end: (seg.end || 0) + timeOffset,
       };

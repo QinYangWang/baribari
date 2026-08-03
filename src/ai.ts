@@ -262,6 +262,10 @@ export function createAiPipeline(
   let abort: AbortController | null = null;
   let seq = 0;
   let pendingCount = 0;
+  /** Generation per segment id — stale enhance results are dropped. */
+  const genById = new Map<string, number>();
+  let activeId: string | null = null;
+  let activeGen = 0;
 
   const notifyBusy = () => {
     onBusy?.(pendingCount > 0 || pumping);
@@ -273,6 +277,14 @@ export function createAiPipeline(
     notifyBusy();
     while (q.length && !closed) {
       const seg = q.shift()!;
+      const id = seg.id || "";
+      const gen = id ? (genById.get(id) ?? 0) : 0;
+      // Superseded while queued (turn reopened with longer text)
+      if (id && genById.get(id) !== gen) {
+        pendingCount = Math.max(0, pendingCount - 1);
+        notifyBusy();
+        continue;
+      }
       const cfg = getCfg();
       if (!aiActive(cfg)) {
         seg.pending = false;
@@ -282,20 +294,39 @@ export function createAiPipeline(
         continue;
       }
       abort = new AbortController();
+      activeId = id || null;
+      activeGen = gen;
       try {
         await enhanceSegment(seg, cfg, abort.signal);
         seg.pending = false;
         pendingCount = Math.max(0, pendingCount - 1);
-        if (!closed) onEnhanced(seg);
+        // Drop if a newer revision of the same turn was queued
+        if (
+          !closed &&
+          (!id || genById.get(id) === gen)
+        ) {
+          onEnhanced(seg);
+        }
       } catch (e) {
         if (!closed) {
-          onError?.(e instanceof Error ? e.message : String(e));
+          const aborted =
+            (e instanceof Error && e.name === "AbortError") ||
+            (typeof e === "object" &&
+              e &&
+              "name" in e &&
+              (e as { name: string }).name === "AbortError");
+          if (!aborted) {
+            onError?.(e instanceof Error ? e.message : String(e));
+          }
           seg.pending = false;
           pendingCount = Math.max(0, pendingCount - 1);
-          onEnhanced(seg); // still show raw
+          if (!aborted && (!id || genById.get(id) === gen)) {
+            onEnhanced(seg); // still show raw
+          }
         }
       }
       abort = null;
+      activeId = null;
       notifyBusy();
     }
     pumping = false;
@@ -306,6 +337,28 @@ export function createAiPipeline(
     push(seg) {
       if (closed) return;
       if (!seg.id) seg.id = `seg_${Date.now()}_${++seq}`;
+      const id = seg.id;
+
+      // Same turn re-committed with more text: drop older queued jobs
+      const prev = q.filter((s) => s.id === id);
+      if (prev.length) {
+        for (let i = q.length - 1; i >= 0; i--) {
+          if (q[i]!.id === id) {
+            q.splice(i, 1);
+            pendingCount = Math.max(0, pendingCount - 1);
+          }
+        }
+      }
+      // Abort in-flight enhance for this id (turn grew after early commit)
+      if (activeId === id && abort) {
+        try {
+          abort.abort();
+        } catch {
+          /* ignore */
+        }
+      }
+      genById.set(id, (genById.get(id) ?? 0) + 1);
+
       // bound queue
       if (q.length > 40) {
         const dropped = q.splice(0, q.length - 30);
@@ -328,6 +381,7 @@ export function createAiPipeline(
       q.length = 0;
       pendingCount = 0;
       pumping = false;
+      genById.clear();
       notifyBusy();
       try {
         abort?.abort();

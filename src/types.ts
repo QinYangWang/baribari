@@ -167,6 +167,41 @@ export interface VadConfig {
   windowSize: number;
 }
 
+/**
+ * Merge short VAD/ASR finals from the same speaker into one turn.
+ * AI correct/translate runs when the turn commits (idle / speaker change).
+ */
+export interface SpeakerTurnConfig {
+  /**
+   * Master switch (default true).
+   * Works with speaker ID (preferred) or gap-only when spk is null / --no-spk.
+   */
+  enabled: boolean;
+  /** Max gap (sec) between same-speaker chunks still merged. Default 1.4. */
+  maxGapSec: number;
+  /** Force-commit open turn after this length (sec). Default 24. */
+  maxTurnSec: number;
+  /**
+   * Wall-clock quiet after last chunk before commit+AI (ms). Default 4000.
+   * Must exceed typical ASR latency so mid-utterance chunks stay draft-only.
+   * No reopen after commit — next speech starts a new turn.
+   */
+  idleMs: number;
+  /**
+   * Max VAD/ASR chunks (≈ short sentences) merged into one turn before commit.
+   * After this many pieces, merge is considered done → one AI translate. Default 3.
+   */
+  maxChunks: number;
+}
+
+export const DEFAULT_SPEAKER_TURN: SpeakerTurnConfig = {
+  enabled: true,
+  maxGapSec: 1.4,
+  maxTurnSec: 24,
+  idleMs: 4000,
+  maxChunks: 3,
+};
+
 export interface TranscribeArgs {
   lang: Lang;
   /** TUI/CLI UI language (zh|ja|en). Independent of ASR lang. */
@@ -201,6 +236,8 @@ export interface TranscribeArgs {
   share: ShareConfig;
   /** VAD endpointing / chunking. */
   vad: VadConfig;
+  /** Same-speaker turn merge (after VAD; before AI). */
+  speakerTurn: SpeakerTurnConfig;
   /**
    * Called once when speaker tracker is ready (global roster seeded).
    * Used by TUI/session to resolve names and promote renames to the roster.
@@ -210,11 +247,25 @@ export interface TranscribeArgs {
   ) => void;
 }
 
+/**
+ * Live transcript event kind.
+ * - `partial`: refreshable “current utterance” line (not persisted / not shared by default)
+ * - `final`: committed segment (history, session jsonl, LAN share, AI)
+ * Omitted `kind` is treated as `final` for backward compatibility.
+ */
+export type SegmentKind = "partial" | "final";
+
 export interface Segment {
   /** Stable id for UI updates (ASR → AI enhance). */
   id?: string;
+  /**
+   * Event kind. Defaults to `final` when omitted.
+   * Partials replace the previous live line; finals append to history.
+   */
+  kind?: SegmentKind;
   start: number;
-  end: number;
+  /** May be missing/open for partials (still decoding). */
+  end?: number;
   wall: Date;
   spk: number | null;
   /** Raw ASR text (never replaced by translation). */
@@ -225,8 +276,23 @@ export interface Segment {
   translation?: string;
   /** ISO wall time for JSON wire format. */
   wallIso?: string;
-  /** True while AI enhancement is still running. */
+  /** True while AI enhancement is still running (finals only). */
   pending?: boolean;
+  /**
+   * Same-speaker turn still open (text may grow). UI/session may upsert;
+   * skip LAN share, AI, and append-only transcript files until commit.
+   */
+  draft?: boolean;
+}
+
+/** True when the segment is a committed final (or legacy emit without kind). */
+export function isFinalSegment(seg: Segment): boolean {
+  return seg.kind !== "partial";
+}
+
+/** True when the segment is a refreshable live/partial line. */
+export function isPartialSegment(seg: Segment): boolean {
+  return seg.kind === "partial";
 }
 
 export type EmitFn = (seg: Segment) => void;
@@ -255,6 +321,121 @@ export const DEFAULT_VAD: VadConfig = {
   maxSpeechDuration: 30,
   windowSize: 512,
 };
+
+/**
+ * Named VAD presets for TUI ←→ (and docs).
+ * Users can still fine-tune individual fields after picking a preset.
+ */
+export type VadPresetId =
+  | "balanced"
+  | "meeting"
+  | "smooth"
+  | "aggressive"
+  | "custom";
+
+export interface VadPreset {
+  id: Exclude<VadPresetId, "custom">;
+  /** English name; UI uses i18n by id. */
+  name: string;
+  /** One-line English hint. */
+  hint: string;
+  vad: VadConfig;
+}
+
+export const VAD_PRESETS: VadPreset[] = [
+  {
+    id: "balanced",
+    name: "Balanced",
+    hint: "Default-like; fewer cuts, longer phrases",
+    // Keep in sync with DEFAULT_VAD so stock config shows as Balanced
+    vad: {
+      threshold: 0.5,
+      minSpeechDuration: 0.4,
+      minSilenceDuration: 0.6,
+      maxSpeechDuration: 30,
+      windowSize: 512,
+    },
+  },
+  {
+    id: "meeting",
+    name: "Meeting",
+    hint: "Multi-speaker turn-taking (recommended)",
+    vad: {
+      threshold: 0.55,
+      minSpeechDuration: 0.28,
+      minSilenceDuration: 0.32,
+      maxSpeechDuration: 9,
+      windowSize: 512,
+    },
+  },
+  {
+    id: "smooth",
+    name: "Smooth",
+    hint: "Fewer fragments; better punctuation feel",
+    vad: {
+      threshold: 0.53,
+      minSpeechDuration: 0.3,
+      minSilenceDuration: 0.4,
+      maxSpeechDuration: 12,
+      windowSize: 512,
+    },
+  },
+  {
+    id: "aggressive",
+    name: "Aggressive",
+    hint: "Short cuts; rely on same-speaker merge",
+    vad: {
+      threshold: 0.58,
+      minSpeechDuration: 0.25,
+      minSilenceDuration: 0.25,
+      maxSpeechDuration: 6,
+      windowSize: 512,
+    },
+  },
+];
+
+function vadClose(a: number, b: number, eps = 0.02): boolean {
+  return Math.abs(a - b) <= eps;
+}
+
+/** Match current VAD to a preset, or "custom" if fine-tuned. */
+export function matchVadPreset(v: VadConfig): VadPresetId {
+  for (const p of VAD_PRESETS) {
+    const x = p.vad;
+    if (
+      vadClose(v.threshold, x.threshold) &&
+      vadClose(v.minSpeechDuration, x.minSpeechDuration) &&
+      vadClose(v.minSilenceDuration, x.minSilenceDuration) &&
+      Math.abs(v.maxSpeechDuration - x.maxSpeechDuration) <= 0.5 &&
+      v.windowSize === x.windowSize
+    ) {
+      return p.id;
+    }
+  }
+  return "custom";
+}
+
+export function applyVadPreset(id: Exclude<VadPresetId, "custom">): VadConfig {
+  const p = VAD_PRESETS.find((x) => x.id === id);
+  return { ...(p?.vad ?? DEFAULT_VAD) };
+}
+
+/**
+ * Cycle named VAD presets (←→ in settings).
+ * Fine-tuned values show as "custom" until a named preset is applied.
+ */
+export function cycleVadPreset(
+  current: VadConfig,
+  dir: 1 | -1,
+): { id: Exclude<VadPresetId, "custom">; vad: VadConfig } {
+  const ids = VAD_PRESETS.map((p) => p.id);
+  const cur = matchVadPreset(current);
+  let i = cur === "custom" ? -1 : ids.indexOf(cur as Exclude<VadPresetId, "custom">);
+  // From custom: → first preset, ← last preset
+  if (i < 0) i = dir > 0 ? -1 : 0;
+  const next = ids[(i + dir + ids.length) % ids.length]!;
+  return { id: next, vad: applyVadPreset(next) };
+}
 
 /** Human-readable help for TUI / docs. */
 export const VAD_FIELD_HELP: Record<

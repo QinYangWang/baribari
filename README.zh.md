@@ -161,7 +161,9 @@ eval "$(baribari completion bash)"
 | `1`–`9` | 指派说话人 |
 | `q` | 退出 |
 
-字幕在 **VAD 切段结束后** 才出现（默认静音约 0.6s 切一段），不是逐字流式。
+**布局：** 说话人 · 实时转写 · 设备 / 录音 / 共享  
+**Live vs final：** 转写栏底部有一条可刷新的 **live 行**——当前 VAD 段在 SenseVoice 解码时显示状态（如「识别中…」，不编造假 token）；端点判定完成后该行清空，**final** 追加到历史列表。会话文件、局域网共享与 AI 纠错/翻译 **只使用 final**。  
+（底层仍是 VAD 切段 + 离线 SenseVoice，不是逐字流式引擎。）
 
 ---
 
@@ -170,9 +172,14 @@ eval "$(baribari completion bash)"
 ```text
 ~/.config/baribari/
 ├── config.json
+├── replace.json     # 本地词典纠错（非 AI，首次启动自动生成示例）
 ├── models/
+├── sessions/
+├── speakers/
 └── recordings/
 ```
+
+**本地整理（不用 AI）：** ASR 与同说话人合并之后、可选 AI 之前，会做空白/重复标点清理，并应用 `replace.json` 替换表。支持 `{ "replacements":[{"from":"…","to":"…"}] }` 或扁平 `{ "错词":"正词" }`。改文件后按 mtime 热加载。
 
 环境变量：`BARIBARI_CONFIG_DIR`、`BARIBARI_UI_LANG`、`BARIBARI_AI_KEY` / `OPENAI_API_KEY`。
 

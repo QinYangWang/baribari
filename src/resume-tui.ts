@@ -16,8 +16,14 @@
  *   q            quit
  */
 
-import { spawn, type ChildProcess } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import fs from "node:fs";
+import {
+  detectPlayerBackend,
+  startAudioPlayback,
+  stopAllAudioPlayback,
+  type PlayHandle,
+} from "./audio-play.js";
 import type { SessionData, SessionSegment } from "./session.js";
 import {
   canContinueSession,
@@ -294,7 +300,12 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
     : 0;
   let playing = false;
   let player: ChildProcess | null = null;
+  let playHandle: PlayHandle | null = null;
   let playTimer: ReturnType<typeof setInterval> | null = null;
+  /** Monotonic id: ignore stale timer/onExit after stop or restart. */
+  let playGen = 0;
+  /** Avoid spamming fallback toast on every seek/chain. */
+  let warnedFfmpegFallback = false;
   let closed = false;
   let lastW = 0;
   let lastH = 0;
@@ -1468,99 +1479,88 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
   });
 
   function stopAudio() {
+    playGen += 1;
     if (playTimer) {
       clearInterval(playTimer);
       playTimer = null;
     }
-    if (player) {
+    try {
+      stopAllAudioPlayback();
+    } catch {
+      /* ignore */
+    }
+    if (playHandle) {
       try {
-        player.kill("SIGTERM");
+        playHandle.stop();
       } catch {
         /* ignore */
       }
-      player = null;
+      playHandle = null;
     }
+    player = null;
     playing = false;
   }
 
-  function which(cmd: string): string | null {
-    const pathEnv = process.env.PATH || "";
-    const sep = process.platform === "win32" ? ";" : ":";
-    for (const dir of pathEnv.split(sep)) {
-      const p = `${dir}${process.platform === "win32" ? "\\" : "/"}${cmd}`;
-      try {
-        if (fs.existsSync(p)) return p;
-      } catch {
-        /* ignore */
+  function startSyntheticPlay(sec: number) {
+    const gen = playGen;
+    playing = true;
+    const t0 = Date.now();
+    const base = sec;
+    playTimer = setInterval(() => {
+      if (gen !== playGen) return;
+      cursor = Math.min(total, base + (Date.now() - t0) / 1000);
+      if (cursor >= total - 0.05) {
+        stopAudio();
+        return;
       }
-    }
-    return null;
+      const idx = segments.findIndex(
+        (s) => s.start <= cursor && cursor < (s.end || s.start + 0.01),
+      );
+      if (idx >= 0) focusSeg = idx;
+      paint();
+    }, 200);
   }
 
   function tryPlayFrom(sec: number) {
     stopAudio();
+    const gen = playGen;
     if (!hasAudio || !audioDir) {
-      // synthetic timeline play without audio
-      playing = true;
-      const t0 = Date.now();
-      const base = sec;
-      playTimer = setInterval(() => {
-        cursor = Math.min(total, base + (Date.now() - t0) / 1000);
-        if (cursor >= total - 0.05) stopAudio();
-        // follow segment under playhead
-        const idx = segments.findIndex(
-          (s) => s.start <= cursor && cursor < (s.end || s.start + 0.01),
-        );
-        if (idx >= 0) focusSeg = idx;
-        paint();
-      }, 200);
+      startSyntheticPlay(sec);
       return;
     }
     const hit = resolveAudioAtTime(audioDir, sec);
     if (!hit) return;
-    const bin = which("ffplay") || which("ffplay.exe");
-    if (!bin) {
-      flash("ffplay not found (audio seek needs ffmpeg)");
-      // still advance cursor synthetically
-      playing = true;
-      const t0 = Date.now();
-      const base = sec;
-      playTimer = setInterval(() => {
-        cursor = Math.min(total, base + (Date.now() - t0) / 1000);
-        if (cursor >= total - 0.05) stopAudio();
-        const idx = segments.findIndex(
-          (s) => s.start <= cursor && cursor < (s.end || s.start + 0.01),
-        );
-        if (idx >= 0) focusSeg = idx;
-        paint();
-      }, 200);
+
+    const clipEnd = hit.clip.startSec + hit.clip.durationSec;
+    const remain = Math.max(0.05, clipEnd - sec);
+    const backend = detectPlayerBackend();
+    if (backend === "none") {
+      flash(t("resume.status.playerMissing"));
+      startSyntheticPlay(sec);
       paint();
       return;
     }
-    player = spawn(
-      bin,
-      [
-        "-nodisp",
-        "-autoexit",
-        "-loglevel",
-        "quiet",
-        "-ss",
-        String(Math.max(0, hit.offsetSec)),
-        hit.path,
-      ],
-      { stdio: "ignore" },
-    );
-    const clipEnd = hit.clip.startSec + hit.clip.durationSec;
+    if (backend === "ffmpeg+os" && !warnedFfmpegFallback) {
+      warnedFfmpegFallback = true;
+      flash(t("resume.status.playerFfmpegFallback"));
+    }
+
     const t0 = Date.now();
     const base = sec;
     playing = true;
-    player.on("exit", () => {
+
+    /** Only the active generation may chain to the next clip. */
+    const chainOrStop = () => {
+      if (gen !== playGen || closed) return;
+      playHandle = null;
       player = null;
-      // chain to next clip if still "playing" and timeline remains
-      if (!closed && playing && cursor < total - 0.1) {
-        const next = resolveAudioAtTime(audioDir, cursor + 0.05);
+      if (playing && cursor < total - 0.1) {
+        // Advance slightly past clip boundary to resolve next file
+        const at = Math.max(cursor, clipEnd + 0.01);
+        const next = resolveAudioAtTime(audioDir, at);
         if (next && next.path !== hit.path) {
-          tryPlayFrom(cursor);
+          cursor = at;
+          tryPlayFrom(at);
           return;
         }
       }
@@ -1570,15 +1570,37 @@ export async function runResumeTui(data: SessionData): Promise<ResumeAction> {
         playTimer = null;
       }
       paint();
-    });
+    };
+
+    playHandle = startAudioPlayback(
+      {
+        path: hit.path,
+        offsetSec: Math.max(0, hit.offsetSec),
+        durationSec: remain + 0.05,
+      },
+      {
+        onExit: () => {
+          if (gen !== playGen) return;
+          chainOrStop();
+        },
+      },
+    );
+    if (!playHandle) {
+      flash(t("resume.status.playerMissing"));
+      startSyntheticPlay(sec);
+      paint();
+      return;
+    }
+    player = playHandle.proc;
+
+    // Cursor only — do NOT restart playback here (avoids double with onExit).
     playTimer = setInterval(() => {
+      if (gen !== playGen) return;
       cursor = Math.min(total, base + (Date.now() - t0) / 1000);
-      // if we crossed into another clip while ffplay still on old file, restart
-      if (cursor >= clipEnd - 0.05 && cursor < total - 0.05) {
-        tryPlayFrom(cursor);
+      if (cursor >= total - 0.05) {
+        stopAudio();
         return;
       }
-      if (cursor >= total - 0.05) stopAudio();
       const idx = segments.findIndex(
         (s) => s.start <= cursor && cursor < (s.end || s.start + 0.01),
       );

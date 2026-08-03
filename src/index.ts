@@ -17,7 +17,18 @@ import {
   transcribe,
 } from "./transcribe.js";
 import type { AudioSource, Lang, Segment, TranscribeArgs, UiLang } from "./types.js";
-import { DEFAULT_AI, DEFAULT_SHARE, DEFAULT_VAD } from "./types.js";
+import { isFinalSegment, isPartialSegment } from "./types.js";
+import {
+  DEFAULT_AI,
+  DEFAULT_SHARE,
+  DEFAULT_SPEAKER_TURN,
+  DEFAULT_VAD,
+} from "./types.js";
+import { createSpeakerTurnCoalescer } from "./speaker-turn.js";
+import {
+  ensureReplaceExample,
+  postprocessSegment,
+} from "./postprocess.js";
 import { createEmitter, onStatus as plainStatus } from "./ui.js";
 import { createTui } from "./tui.js";
 import {
@@ -26,6 +37,7 @@ import {
   loadSettings,
   mergeAi,
   mergeShare,
+  mergeSpeakerTurn,
   mergeVad,
   modelOverridesFromSettings,
   normalizeRecordDir,
@@ -218,6 +230,7 @@ function buildArgsFromSaved(
     ai: mergeAi(saved.ai),
     share: mergeShare(saved.share),
     vad: mergeVad(saved.vad),
+    speakerTurn: mergeSpeakerTurn(saved.speakerTurn),
     uiLang: resolveUiLang({ saved: saved.uiLang }),
   };
 }
@@ -759,6 +772,9 @@ async function runMain(opts: RunOpts) {
   // re-merge clamps
   Object.assign(vad, mergeVad(vad));
 
+  // Same-speaker / gap-based turn merge (still useful with --no-spk)
+  const speakerTurn = mergeSpeakerTurn(saved.speakerTurn);
+
   if (!LANGS.includes(lang as Lang)) {
     console.error(
       t("cli.invalidLang", { lang, opts: LANGS.join(", ") }),
@@ -797,6 +813,12 @@ async function runMain(opts: RunOpts) {
     console.error(t("cli.modelsNotReady"));
     hardExit(1);
   }
+  // Non-AI dictionary file (created once if missing)
+  try {
+    ensureReplaceExample();
+  } catch {
+    /* ignore */
+  }
 
   const args: TranscribeArgs = {
     lang: lang as Lang,
@@ -813,6 +835,7 @@ async function runMain(opts: RunOpts) {
     ai,
     share,
     vad,
+    speakerTurn,
   };
 
   const stop = { value: false };
@@ -824,7 +847,7 @@ async function runMain(opts: RunOpts) {
   }
 }
 
-/** Wire ASR emit → optional AI → UI + optional LAN share. */
+/** Wire ASR emit → speaker-turn coalesce → optional AI → UI + LAN share. */
 function createSegmentPipeline(
   args: TranscribeArgs,
   emitUi: (seg: Segment) => void,
@@ -839,13 +862,18 @@ function createSegmentPipeline(
   let shareWanted = args.share.enabled;
   let shareStarting = false;
 
-  const deliver = (seg: Segment) => {
-    // Don't broadcast provisional AI-pending rows to LAN peers
+  /** UI (+ optional share). Partials never shared. */
+  const deliverUi = (seg: Segment, opts?: { share?: boolean }) => {
+    if (isPartialSegment(seg)) {
+      emitUi(seg);
+      return;
+    }
     if (!seg.pending) {
       seg.wallIso = seg.wall.toISOString();
     }
     emitUi(seg);
-    if (share && !seg.pending) {
+    const allowShare = opts?.share !== false && !seg.draft && !seg.pending;
+    if (share && allowShare) {
       try {
         share.broadcast(seg);
       } catch {
@@ -856,17 +884,96 @@ function createSegmentPipeline(
 
   const aiPipe = createAiPipeline(
     () => args.ai,
-    deliver,
+    (seg) => deliverUi(seg, { share: true }),
     (msg) => onStatus(`AI: ${msg}`),
     onAiBusy,
   );
 
-  const onAsr = (seg: Segment) => {
+  /** Local non-AI polish (dict + cleanup) before UI/AI. */
+  const polish = (seg: Segment) => postprocessSegment(seg);
+
+  /**
+   * Turn fully merged → polish → AI once (correct + translate), then share.
+   * Never call this for draft/provisional rows.
+   */
+  const deliverCommit = (seg: Segment) => {
+    if (!seg.kind) seg.kind = "final";
+    // Safety: drafts must not hit AI (merge still open)
+    if (seg.draft) {
+      polish(seg);
+      deliverUi(seg, { share: false });
+      return;
+    }
+    seg.draft = false;
+    polish(seg);
     if (aiActive(args.ai)) {
       aiPipe.push(seg);
     } else {
-      deliver(seg);
+      deliverUi(seg, { share: true });
     }
+  };
+
+  /** Growing same-speaker text: UI only — never AI / never share. */
+  const deliverProvisional = (seg: Segment) => {
+    if (isPartialSegment(seg)) {
+      emitUi(seg);
+      return;
+    }
+    if (!seg.kind) seg.kind = "final";
+    seg.draft = true;
+    polish(seg);
+    // Explicitly no AI path here
+    deliverUi(seg, { share: false });
+  };
+
+  const turnEnabled = () => Boolean(args.speakerTurn?.enabled);
+
+  let turn = turnEnabled()
+    ? createSpeakerTurnCoalescer(
+        {
+          maxGapSec: args.speakerTurn.maxGapSec,
+          maxTurnSec: args.speakerTurn.maxTurnSec,
+          idleMs: args.speakerTurn.idleMs,
+          maxChunks: args.speakerTurn.maxChunks,
+        },
+        {
+          onProvisional: deliverProvisional,
+          onCommit: deliverCommit,
+        },
+      )
+    : null;
+
+  const onAsr = (seg: Segment) => {
+    if (isPartialSegment(seg)) {
+      emitUi(seg);
+      return;
+    }
+    if (!seg.kind) seg.kind = "final";
+
+    if (turnEnabled() && !turn) {
+      turn = createSpeakerTurnCoalescer(
+        {
+          maxGapSec: args.speakerTurn.maxGapSec,
+          maxTurnSec: args.speakerTurn.maxTurnSec,
+          idleMs: args.speakerTurn.idleMs,
+          maxChunks: args.speakerTurn.maxChunks,
+        },
+        {
+          onProvisional: deliverProvisional,
+          onCommit: deliverCommit,
+        },
+      );
+    } else if (!turnEnabled() && turn) {
+      turn.flush();
+      turn.close();
+      turn = null;
+    }
+
+    if (turn) {
+      turn.push(seg);
+      return;
+    }
+    deliverCommit(seg);
   };
 
   const ensureShare = async () => {
@@ -923,6 +1030,13 @@ function createSegmentPipeline(
     },
     close() {
       clearInterval(sharePoll);
+      try {
+        turn?.flush();
+        turn?.close();
+      } catch {
+        /* ignore */
+      }
+      turn = null;
       aiPipe.close();
       try {
         share?.close();
@@ -1121,7 +1235,8 @@ async function runTui(
     args,
     (seg) => {
       tui.emit(seg);
-      if (!seg.pending) {
+      // Session jsonl: finals only; draft turns upsert by id while growing
+      if (isFinalSegment(seg) && !seg.pending) {
         session.onSegment(seg, speakersFromSeg(seg));
       }
     },
@@ -1273,6 +1388,7 @@ async function runJoin(
       ai: { ...DEFAULT_AI, enabled: false },
       share: { ...DEFAULT_SHARE, enabled: false },
       vad: { ...DEFAULT_VAD },
+      speakerTurn: { ...DEFAULT_SPEAKER_TURN, enabled: false },
       output: opts.output,
     };
     const tui = createTui(args, {

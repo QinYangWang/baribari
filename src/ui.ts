@@ -5,7 +5,7 @@
 
 import fs from "node:fs";
 import type { Segment } from "./types.js";
-import { displayText } from "./types.js";
+import { displayText, isPartialSegment } from "./types.js";
 import { localeTag, t } from "./i18n/index.js";
 
 const SPK_COLORS = [
@@ -48,14 +48,31 @@ export function createEmitter(outputPath?: string): {
 
   return {
     emit(seg: Segment) {
+      // Live/partial: single-line status on stderr; not written to --output
+      if (isPartialSegment(seg)) {
+        const tip = (seg.text || "").trim();
+        if (tip) {
+          process.stderr.write(
+            `\r${DIM}${t("status.recognizing")}${RESET}          `,
+          );
+        }
+        return;
+      }
+      // Growing same-speaker draft: wait for turn commit (avoid spam)
+      if (seg.draft) return;
+      // clear partial status line
+      process.stderr.write("\r" + " ".repeat(40) + "\r");
+
       const spkLabel =
         seg.spk != null
           ? t("plain.speaker", { n: seg.spk })
           : t("common.dash");
       const c = colorFor(seg.spk);
       const main = displayText(seg);
+      const endSec =
+        seg.end != null && Number.isFinite(seg.end) ? seg.end : seg.start;
       const line =
-        `${DIM}[${fmtTime(seg.wall)} ${fmtSec(seg.start)}-${fmtSec(seg.end)}]${RESET} ` +
+        `${DIM}[${fmtTime(seg.wall)} ${fmtSec(seg.start)}-${fmtSec(endSec)}]${RESET} ` +
         `${c}${spkLabel}${RESET}  ${main}`;
       console.log(line);
       if (seg.translation) {
@@ -64,7 +81,7 @@ export function createEmitter(outputPath?: string): {
 
       if (out) {
         let plain =
-          `[${fmtTime(seg.wall)} ${fmtSec(seg.start)}-${fmtSec(seg.end)}] ${spkLabel}  ${main}`;
+          `[${fmtTime(seg.wall)} ${fmtSec(seg.start)}-${fmtSec(endSec)}] ${spkLabel}  ${main}`;
         if (seg.translation) plain += ` | ${seg.translation}`;
         if (seg.corrected && seg.corrected !== seg.text) {
           plain += `  (ASR: ${seg.text})`;

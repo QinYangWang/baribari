@@ -94,6 +94,7 @@ const ja: MessageTree = {
     exited: "終了しました",
     loadingModels: "モデル読込中 (sherpa-onnx)…",
     aiProcessing: "AI が転写を処理中…",
+    recognizing: "認識中…",
     listeningLive: "聴取中…",
     recordSaved: "録音を保存: {file}",
     recordSaveFail: "録音の保存に失敗: {err}",
@@ -120,6 +121,8 @@ const ja: MessageTree = {
   tui: {
     brand: "◆ baribari",
     listening: "聴取中",
+    recognizing: "認識中",
+    liveLine: "ライブ",
     paused: "一時停止",
     source: "音源",
     language: "言語",
@@ -224,6 +227,10 @@ const ja: MessageTree = {
       share: { label: "スイッチ", help: "LAN で転写を配信" },
       sharePort: { label: "ポート", help: "待受ポート 1024–65535" },
       shareHost: { label: "アドレス", help: "バインド先、既定 0.0.0.0" },
+      vadPreset: {
+        label: "VAD プリセット",
+        help: "←→ バランス / 会議 / なめらか / 積極",
+      },
       vadThr: { label: "VAD 閾値", help: "低=敏感、高=厳格" },
       vadMinSp: { label: "最短音声", help: "これより短い区間は破棄" },
       vadSil: { label: "無音分割", help: "無音が続くと区間終了" },
@@ -232,6 +239,14 @@ const ja: MessageTree = {
     },
     keys: "↑↓ 移動  ←→ 変更  Enter 編集/保存  Space 切替  Esc 閉じる",
     keysEdit: "Enter 保存  Ctrl+U 消去  Esc 取消",
+    vadPreset: {
+      balanced: "バランス",
+      meeting: "会議",
+      smooth: "なめらか",
+      aggressive: "積極",
+      custom: "カスタム",
+      applied: "VAD プリセット → {name}",
+    },
     provider: {
       openai: "OpenAI",
       gemini: "Google Gemini",
@@ -467,6 +482,10 @@ const ja: MessageTree = {
       mergeSaved: "統合を保存しました",
       mergeDiscarded: "統合を破棄しました",
       mergeNeedPanel: "先に Tab で話者パネルへ · その後 m",
+      playerMissing:
+        "再生不可: ffmpeg（ffplay 含む）を入れるか、同梱 ffmpeg-static を保持してください",
+      playerFfmpegFallback:
+        "ffmpeg で再生中（ffplay なし）· スムーズなシークには ffplay 推奨",
     },
     renameTitle: "セッション名",
     renameHint: "枠下の Save / Cancel",

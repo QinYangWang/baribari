@@ -96,6 +96,8 @@ export type MessageTree = {
     exited: string;
     loadingModels: string;
     aiProcessing: string;
+    /** SenseVoice decode in progress (live partial status). */
+    recognizing: string;
     listeningLive: string;
     recordSaved: string;
     recordSaveFail: string;
@@ -122,6 +124,10 @@ export type MessageTree = {
   tui: {
     brand: string;
     listening: string;
+    /** Status while ASR is decoding the current utterance. */
+    recognizing: string;
+    /** Live/partial row label when speaker unknown. */
+    liveLine: string;
     paused: string;
     source: string;
     language: string;
@@ -222,6 +228,7 @@ export type MessageTree = {
       share: { label: string; help: string };
       sharePort: { label: string; help: string };
       shareHost: { label: string; help: string };
+      vadPreset: { label: string; help: string };
       vadThr: { label: string; help: string };
       vadMinSp: { label: string; help: string };
       vadSil: { label: string; help: string };
@@ -230,6 +237,15 @@ export type MessageTree = {
     };
     keys: string;
     keysEdit: string;
+    /** VAD preset labels (←→ in settings). */
+    vadPreset: {
+      balanced: string;
+      meeting: string;
+      smooth: string;
+      aggressive: string;
+      custom: string;
+      applied: string; // {name}
+    };
     provider: {
       openai: string;
       gemini: string;
@@ -447,6 +463,10 @@ export type MessageTree = {
       mergeSaved: string;
       mergeDiscarded: string;
       mergeNeedPanel: string;
+      /** No ffplay and no ffmpeg available. */
+      playerMissing: string;
+      /** Playing via bundled ffmpeg + OS player (no ffplay). */
+      playerFfmpegFallback: string;
     };
     renameTitle: string;
     renameHint: string;

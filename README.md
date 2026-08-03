@@ -223,7 +223,7 @@ Not a live meeting: browse captions on a **timeline**, optionally play audio, co
 |-----|--------|
 | `↑` `↓` | Previous / next **segment** (moves playhead to that segment) |
 | `←` `→` | Seek **−2s / +2s** on the timeline |
-| `Space` or `p` | Play / pause (`ffplay` for audio; else cursor only) |
+| `Space` or `p` | Play / pause (prefers `ffplay`; else bundled `ffmpeg` + OS player; else cursor only) |
 | `c` | **Continue** live capture into this session (not demo) |
 | `t` / `T` | Translate **current** / **all missing** (AI) |
 | `m` | Meeting **summary** (transcript focus) |
@@ -251,10 +251,11 @@ Audio: `audio-part-*.wav` + `audio.wav` are **merged** when formats match, or ch
 | `Tab` | Focus speakers ↔ transcript |
 | `1`–`9` | Assign last segment to speaker *N* (speaker-list focus) |
 | `m` | **Merge** speakers (in speaker list: source → pick target → Enter) |
-| `↑` `↓` | Scroll transcript / move settings |
+| `↑` `↓` / mouse wheel | Scroll transcript (wheel up = older; `g` = jump to live bottom) |
 | `q` | Quit |
 
 **Layout:** speakers · live transcript · device / record / share  
+**Live vs final:** the transcript column keeps a single **refreshable live row** at the bottom while SenseVoice is decoding the current VAD segment (status like “Recognizing…”; no invented tokens). When the segment endpoints, that row clears and a **final** line is appended to history. Session files, LAN share, and AI correct/translate use **finals only**.  
 **Settings:** recognition, AI (incl. translate target), audio, share, VAD, UI language  
 **Resume settings:** UI language (instant), AI translate target, model (middle-ellipsis for long ids), API status  
 
@@ -267,12 +268,30 @@ Default directory (override with `BARIBARI_CONFIG_DIR`):
 ```text
 ~/.config/baribari/
 ├── config.json      # persisted settings
+├── replace.json     # local non-AI dictionary + cleanup (auto-created)
 ├── models/          # VAD / ASR / speaker models
 ├── sessions/        # auto-saved meetings (transcript ± audio)
+├── speakers/        # global voiceprint roster
 └── recordings/      # legacy / fallback WAV dir
 ```
 
 CLI flags always override `config.json`. UI language is stored as `uiLang` and chosen on first run if missing.
+
+### Local polish (no AI)
+
+After ASR (and same-speaker turn merge), text is cleaned and passed through `replace.json` **before** optional AI correct/translate:
+
+```json
+{
+  "enabled": true,
+  "replacements": [
+    { "from": "日言語", "to": "日本語" },
+    { "from": "ズーム", "to": "Zoom" }
+  ]
+}
+```
+
+Or a flat map: `{ "日言語": "日本語", "ズーム": "Zoom" }`. Longest match first. Built-in cleanup collapses repeated `、。`, NFKC, CJK spacing. Edit the file anytime — reloaded by mtime (no restart required for new rules on next segment).
 
 ### Environment
 

@@ -17,11 +17,17 @@ import type {
   AudioSource,
   Lang,
   ShareConfig,
+  SpeakerTurnConfig,
   TranslateLang,
   UiLang,
   VadConfig,
 } from "./types.js";
-import { DEFAULT_AI, DEFAULT_SHARE, DEFAULT_VAD } from "./types.js";
+import {
+  DEFAULT_AI,
+  DEFAULT_SHARE,
+  DEFAULT_SPEAKER_TURN,
+  DEFAULT_VAD,
+} from "./types.js";
 import { isUiLang } from "./i18n/index.js";
 
 /** Default recordings dir: ~/.config/baribari/recordings */
@@ -49,6 +55,8 @@ export interface SavedSettings {
   ai?: Partial<AiConfig>;
   share?: Partial<ShareConfig>;
   vad?: Partial<VadConfig>;
+  /** Same-speaker turn merge after VAD (before AI). */
+  speakerTurn?: Partial<SpeakerTurnConfig>;
 }
 
 const LANGS: Lang[] = ["auto", "zh", "en", "ja", "ko", "yue"];
@@ -285,6 +293,19 @@ export function mergeVad(partial?: Partial<VadConfig>): VadConfig {
   return m;
 }
 
+export function mergeSpeakerTurn(
+  partial?: Partial<SpeakerTurnConfig>,
+): SpeakerTurnConfig {
+  const m = { ...DEFAULT_SPEAKER_TURN, ...partial };
+  m.maxGapSec = Math.min(5, Math.max(0.15, m.maxGapSec));
+  m.maxTurnSec = Math.min(120, Math.max(2, m.maxTurnSec));
+  // Idle must stay long enough that AI waits for merge, not each VAD piece
+  m.idleMs = Math.min(15000, Math.max(2500, Math.round(m.idleMs)));
+  m.maxChunks = Math.min(20, Math.max(1, Math.round(m.maxChunks || 3)));
+  m.enabled = Boolean(m.enabled);
+  return m;
+}
+
 export function saveSettings(partial: SavedSettings): void {
   ensureConfigDir();
   const file = configPath();
@@ -295,6 +316,9 @@ export function saveSettings(partial: SavedSettings): void {
     ai: partial.ai ? { ...prev.ai, ...partial.ai } : prev.ai,
     share: partial.share ? { ...prev.share, ...partial.share } : prev.share,
     vad: partial.vad ? { ...prev.vad, ...partial.vad } : prev.vad,
+    speakerTurn: partial.speakerTurn
+      ? { ...prev.speakerTurn, ...partial.speakerTurn }
+      : prev.speakerTurn,
     models: partial.models ? { ...prev.models, ...partial.models } : prev.models,
   };
 
@@ -340,6 +364,16 @@ export function saveSettings(partial: SavedSettings): void {
       windowSize: v.windowSize,
     };
   }
+  if (next.speakerTurn) {
+    const st = mergeSpeakerTurn(next.speakerTurn);
+    clean.speakerTurn = {
+      enabled: st.enabled,
+      maxGapSec: st.maxGapSec,
+      maxTurnSec: st.maxTurnSec,
+      idleMs: st.idleMs,
+      maxChunks: st.maxChunks,
+    };
+  }
 
   fs.writeFileSync(file, JSON.stringify(clean, null, 2) + "\n", "utf8");
 }
@@ -356,6 +390,7 @@ export function snapshotFromArgs(args: {
   ai?: AiConfig;
   share?: ShareConfig;
   vad?: VadConfig;
+  speakerTurn?: SpeakerTurnConfig;
 }): SavedSettings {
   const prev = loadSettings();
   return {
@@ -389,6 +424,7 @@ export function snapshotFromArgs(args: {
         }
       : undefined,
     vad: args.vad ? { ...args.vad } : undefined,
+    speakerTurn: args.speakerTurn ? { ...args.speakerTurn } : undefined,
   };
 }
 

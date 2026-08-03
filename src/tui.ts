@@ -8,7 +8,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { AudioSource, Lang, Segment, TranscribeArgs } from "./types.js";
-import { displayText } from "./types.js";
+import {
+  cycleVadPreset,
+  displayText,
+  isPartialSegment,
+  matchVadPreset,
+} from "./types.js";
 import {
   defaultRecordDir,
   flushSaveSettings,
@@ -64,6 +69,9 @@ const HIDE_CUR = `${ESC}[?25l`;
 const SHOW_CUR = `${ESC}[?25h`;
 const ALT_ON = `${ESC}[?1049h`;
 const ALT_OFF = `${ESC}[?1049l`;
+/** Enable mouse tracking (normal + SGR coords) for wheel scroll. */
+const MOUSE_ON = `${ESC}[?1000h${ESC}[?1006h`;
+const MOUSE_OFF = `${ESC}[?1000l${ESC}[?1006l`;
 const CLEAR = `${ESC}[2J${ESC}[H`;
 
 const WIDE_MIN = 140;
@@ -133,6 +141,8 @@ interface TranscriptSegment {
   isActive: boolean;
   /** AI still running on this segment. */
   pending?: boolean;
+  /** Same-speaker turn still growing (merge in progress). */
+  isDraft?: boolean;
   wall: Date;
 }
 
@@ -776,7 +786,18 @@ export function createTui(
   },
 ): TuiHandle {
   if (args.uiLang) setUiLang(args.uiLang);
+  /** Committed finals only (history list). */
   const segments: TranscriptSegment[] = [];
+  /**
+   * Single refreshable live/partial row (TMSpeech-style).
+   * Not selectable for speaker assign; not written to session/share.
+   */
+  let livePartial: {
+    text: string;
+    start?: number;
+    wall: Date;
+    spk: number | null;
+  } | null = null;
   const speakers = new Map<string, Speaker>();
   let nextManualId = 1;
   let segSeq = 0;
@@ -790,8 +811,12 @@ export function createTui(
   let aiBusy = false;
   /** Earliest time we may clear aiBusy (keep spinner visible briefly). */
   let aiBusyHoldUntil = 0;
-  const AI_BUSY_MIN_MS = 700;
+  /** Min time to show AI spinner / keep pending chrome (avoid flash). */
+  const AI_BUSY_MIN_MS = 480;
   const pendingHold = new Map<string, number>(); // seg id → show spinner until
+  /** Coalesce rapid draft/partial paints to cut merge flicker. */
+  let paintTimer: ReturnType<typeof setTimeout> | null = null;
+  let lastPaintAt = 0;
   const startedAt = Date.now();
   let recordStartedAt: number | null = null;
   let sessionName = (opts.sessionName || "").trim();
@@ -930,6 +955,7 @@ export function createTui(
     | "share"
     | "sharePort"
     | "shareHost"
+    | "vadPreset"
     | "vadThr"
     | "vadMinSp"
     | "vadSil"
@@ -1034,6 +1060,12 @@ export function createTui(
       label: t("settings.items.shareHost.label"),
       help: t("settings.items.shareHost.help"),
       group: t("settings.groups.share"),
+    },
+    {
+      key: "vadPreset",
+      label: t("settings.items.vadPreset.label"),
+      help: t("settings.items.vadPreset.help"),
+      group: t("settings.groups.vad"),
     },
     {
       key: "vadThr",
@@ -1197,6 +1229,14 @@ export function createTui(
         return { text: String(args.share.port), fg: C.muted };
       case "shareHost":
         return { text: args.share.host || "0.0.0.0", fg: C.muted };
+      case "vadPreset": {
+        const id = matchVadPreset(args.vad);
+        return {
+          text: t(`settings.vadPreset.${id}`),
+          fg: id === "custom" ? C.muted : C.accent,
+          dim: id === "custom",
+        };
+      }
       case "vadThr":
         return {
           text: barValue(
@@ -1282,7 +1322,9 @@ export function createTui(
     const listenFg = paused ? C.warn : C.ok;
     const listen = paused
       ? `❚❚ ${t("tui.paused")}`
-      : `${pulse % 2 === 0 ? "●" : "○"} ${t("tui.listening")}`;
+      : livePartial
+        ? `${pulse % 2 === 0 ? "●" : "○"} ${t("tui.recognizing")}`
+        : `${pulse % 2 === 0 ? "●" : "○"} ${t("tui.listening")}`;
     const aiOn = args.ai.enabled;
     const sharePart = args.share.enabled
       ? `${t("tui.share")} :${args.share.port}`
@@ -1404,8 +1446,7 @@ export function createTui(
     toast = { kind, title, body, confirm: opts?.confirm };
     // Keep continuous merge guide in status when not a confirm toast
     if (!opts?.confirm) status = "";
-    dirty = true;
-    paint();
+    paint({ urgent: true });
     // Ordinary notices auto-dismiss after 3s (confirm waits for y/n)
     if (!opts?.confirm) {
       const snap = toast;
@@ -1420,8 +1461,7 @@ export function createTui(
     if (!toast) return;
     clearToastTimer();
     toast = null;
-    dirty = true;
-    paint();
+    paint({ urgent: true });
   }
 
   /** Route one-shot user notice to top-right popup. */
@@ -1659,13 +1699,17 @@ export function createTui(
       ? sp?.displayName || t("common.speakerN", { n: seg.speakerId.replace(/\D/g, "") || "?" })
       : t("common.unknownSpeaker");
     const color = sp?.color || (seg.pending ? C.accent : C.muted);
-    const hot = seg.isActive || !!seg.pending;
+    const hot = seg.isActive || !!seg.pending || !!seg.isDraft;
+    // Soft draft indicator (●/○) — full braille spinner only for AI pending
     const spin = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+    const soft = ["●", "◉"];
     const dot = seg.pending
-      ? spin[pulse % spin.length]!
-      : hot
-        ? "●"
-        : "○";
+      ? spin[Math.floor(pulse / 2) % spin.length]!
+      : seg.isDraft
+        ? soft[Math.floor(pulse / 3) % soft.length]!
+        : hot
+          ? "●"
+          : "○";
     // Prefer real end; open-ended only when end unknown
     const time =
       seg.endedAtMs != null && Number.isFinite(seg.endedAtMs)
@@ -1693,9 +1737,10 @@ export function createTui(
         },
       });
     }
-    // Loading line under body while AI runs (keep visible even with short AI latency)
-    if (seg.pending) {
-      const dots = ".".repeat((pulse % 3) + 1);
+    // AI loading line only when still waiting and no translation yet
+    // (if translation already sticky, don't cover it with a flashing loader)
+    if (seg.pending && !seg.translatedText) {
+      const dots = ".".repeat((Math.floor(pulse / 2) % 3) + 1);
       const label = t("status.aiProcessing").replace(/…$/, "").replace(/\.\.\.$/, "");
       lines.push({
         text: " ".repeat(indent) + `${label}${dots}`,
@@ -1707,9 +1752,51 @@ export function createTui(
       for (const wl of tw) {
         lines.push({
           text: " ".repeat(indent) + wl,
-          style: { fg: C.translate, dim: !hot },
+          // Keep translation readable even when row is no longer "hot"
+          style: { fg: C.translate, dim: false },
         });
       }
+    }
+    lines.push({ text: "", style: {} });
+    return lines;
+  }
+
+  function livePartialVisualLines(
+    innerW: number,
+  ): { text: string; style: Partial<Cell> }[] {
+    if (!livePartial) return [];
+    const lines: { text: string; style: Partial<Cell> }[] = [];
+    // Slow soft pulse for live row (avoid frantic braille flicker)
+    const soft = ["●", "◉", "○", "◉"];
+    const dot = soft[Math.floor(pulse / 3) % soft.length]!;
+    // Look up only — do not create speakers during paint
+    const sid =
+      livePartial.spk != null ? speakerIdFromSpk(livePartial.spk) : null;
+    const sp = sid ? speakers.get(sid) : undefined;
+    const name = sid
+      ? sp?.displayName ||
+        t("common.speakerN", {
+          n: String(livePartial.spk ?? "?"),
+        })
+      : t("tui.liveLine");
+    const time =
+      livePartial.start != null && Number.isFinite(livePartial.start)
+        ? `${fmtDur(livePartial.start)}–…`
+        : "…";
+    lines.push({
+      text: `${dot} ${name}  ${time}`,
+      style: { fg: C.accent, bold: true, dim: true },
+    });
+    const indent = 2;
+    const textW = Math.max(4, innerW - indent);
+    const body = (livePartial.text || t("status.recognizing")).trim() || "…";
+    // Soft ellipsis suffix so live row reads as in-progress
+    const shown = body.endsWith("…") || body.endsWith("...") ? body : `${body}…`;
+    for (const wl of wrapDisplay(shown, textW)) {
+      lines.push({
+        text: " ".repeat(indent) + wl,
+        style: { fg: C.muted, dim: true },
+      });
     }
     lines.push({ text: "", style: {} });
     return lines;
@@ -1734,7 +1821,7 @@ export function createTui(
     const innerY = r.y + 1;
     const innerH = Math.max(0, r.h - 2);
 
-    if (segments.length === 0) {
+    if (segments.length === 0 && !livePartial) {
       const h1 = t("tui.waiting1");
       const h2 = t("tui.waiting2");
       const cy = innerY + Math.floor(innerH / 2) - 1;
@@ -1757,28 +1844,46 @@ export function createTui(
       return;
     }
 
-    // build visual rows for all segments (bounded)
+    // History (finals) + pinned live/partial row at bottom (TMSpeech-style)
     const maxKeep = 200;
     const segs = segments.length > maxKeep ? segments.slice(-maxKeep) : segments;
     const visual: {
       text: string;
       style: Partial<Cell>;
       active?: boolean;
+      live?: boolean;
     }[] = [];
     for (const seg of segs) {
       const ls = segmentVisualLines(seg, innerW);
       for (const l of ls) {
-        visual.push({ ...l, active: seg.isActive || !!seg.pending });
+        visual.push({
+          ...l,
+          active: seg.isActive || !!seg.pending || !!seg.isDraft,
+        });
       }
     }
+    const liveLines = livePartialVisualLines(innerW);
+    for (const l of liveLines) {
+      visual.push({ ...l, active: true, live: true });
+    }
 
-    const maxScroll = Math.max(0, visual.length - innerH);
+    // Reserve space for live row so history scroll does not hide it when pinned
+    const liveH = liveLines.length;
+    const histH = Math.max(0, innerH - liveH);
+    const histVisualLen = Math.max(0, visual.length - liveH);
+    const maxScroll = Math.max(0, histVisualLen - histH);
     if (scroll > maxScroll) scroll = maxScroll;
     const stickBottom = scroll === 0;
-    const start = stickBottom
-      ? Math.max(0, visual.length - innerH)
-      : Math.max(0, visual.length - innerH - scroll);
-    const slice = visual.slice(start, start + innerH);
+    // When stick-bottom: show tail of history + live; when scrolled: keep live pinned if room
+    let histStart: number;
+    if (stickBottom) {
+      histStart = Math.max(0, histVisualLen - histH);
+    } else {
+      histStart = Math.max(0, histVisualLen - histH - scroll);
+    }
+    const histSlice = visual.slice(histStart, histStart + histH);
+    const liveSlice = liveH > 0 ? visual.slice(histVisualLen) : [];
+    const slice = histSlice.concat(liveSlice);
 
     for (let i = 0; i < slice.length; i++) {
       const row = slice[i]!;
@@ -1798,7 +1903,7 @@ export function createTui(
           buf,
           r.x + 1,
           y,
-          "▌",
+          row.live ? "┊" : "▌",
           { fg: C.accent, bg: C.activeBg },
           contentMaxX,
         );
@@ -2326,8 +2431,12 @@ export function createTui(
     });
   }
 
-  function paint(): void {
+  function paintNow(): void {
     if (closed) return;
+    if (paintTimer) {
+      clearTimeout(paintTimer);
+      paintTimer = null;
+    }
     const W = cols();
     const H = rows();
     const showMsg = !isIdleStatus(effectiveStatus());
@@ -2343,6 +2452,7 @@ export function createTui(
       lastW = W;
       lastH = H;
       dirty = false;
+      lastPaintAt = Date.now();
       return;
     }
 
@@ -2380,6 +2490,34 @@ export function createTui(
     flushDiff(prevBuf, next, stdout);
     prevBuf = next;
     dirty = false;
+    lastPaintAt = Date.now();
+  }
+
+  /**
+   * Schedule a paint. High-frequency draft/partial updates are coalesced
+   * (~12fps) so speaker-turn merge doesn't flash every chunk.
+   * Interactive UI (keys/modals) still paints immediately.
+   */
+  function paint(opts?: { urgent?: boolean }): void {
+    if (closed) return;
+    dirty = true;
+    if (opts?.urgent) {
+      paintNow();
+      return;
+    }
+    const minInterval = 80; // ms between non-urgent paints
+    const elapsed = Date.now() - lastPaintAt;
+    if (elapsed >= minInterval && !paintTimer) {
+      paintNow();
+      return;
+    }
+    if (paintTimer) return;
+    const wait = Math.max(0, minInterval - elapsed);
+    paintTimer = setTimeout(() => {
+      paintTimer = null;
+      if (dirty && !closed) paintNow();
+    }, wait);
+    paintTimer.unref?.();
   }
 
   // ── settings mutations ─────────────────────────────────
@@ -2471,6 +2609,17 @@ export function createTui(
     );
     if (!args.share.enabled) args.share.enabled = true;
     notify(t("status.sharePort", { port: args.share.port }));
+    persist();
+  }
+
+  function cycleVadPresetSetting(dir: 1 | -1): void {
+    const { id, vad } = cycleVadPreset(args.vad, dir);
+    args.vad = { ...vad };
+    notify(
+      t("settings.vadPreset.applied", {
+        name: t(`settings.vadPreset.${id}`),
+      }),
+    );
     persist();
   }
 
@@ -2691,6 +2840,9 @@ export function createTui(
       case "sharePort":
         nudgeSharePort(dir);
         break;
+      case "vadPreset":
+        cycleVadPresetSetting(dir);
+        break;
       case "vadThr":
         nudgeVadThreshold(dir);
         break;
@@ -2724,6 +2876,9 @@ export function createTui(
         break;
       case "aiTranslate":
         cycleAiTranslate(1);
+        break;
+      case "vadPreset":
+        cycleVadPresetSetting(1);
         break;
       case "aiProvider": {
         args.ai = cycleAiProvider(args.ai, 1);
@@ -3368,6 +3523,7 @@ export function createTui(
     }
     if (key === "c" || key === "C") {
       segments.length = 0;
+      livePartial = null;
       for (const s of speakers.values()) {
         s.segmentCount = 0;
         s.isActive = false;
@@ -3384,26 +3540,28 @@ export function createTui(
     if (key === "g") {
       scroll = 0;
       dirty = true;
+      paint({ urgent: true });
+      return;
+    }
+    // Mouse wheel / click (SGR: ESC[<btn;x;yM  or …m for release)
+    if (key.startsWith("\x1b[<") && /[Mm]$/.test(key)) {
+      handleMouseSgr(key);
       return;
     }
     if (key === "\x1b[A" && mode === "normal") {
-      scroll += 1;
-      dirty = true;
+      scrollTranscript(1);
       return;
     }
     if (key === "\x1b[B" && mode === "normal") {
-      scroll = Math.max(0, scroll - 1);
-      dirty = true;
+      scrollTranscript(-1);
       return;
     }
     if (key === "\x1b[5~") {
-      scroll += Math.max(3, Math.floor(rows() / 2));
-      dirty = true;
+      scrollTranscript(Math.max(3, Math.floor(rows() / 2)));
       return;
     }
     if (key === "\x1b[6~") {
-      scroll = Math.max(0, scroll - Math.max(3, Math.floor(rows() / 2)));
-      dirty = true;
+      scrollTranscript(-Math.max(3, Math.floor(rows() / 2)));
       return;
     }
     if (key >= "1" && key <= "9" && mode === "normal") {
@@ -3411,6 +3569,40 @@ export function createTui(
       dirty = true;
       return;
     }
+  }
+
+  /** scroll>0 = look at older lines; 0 = stick to live bottom. */
+  function scrollTranscript(deltaLines: number): void {
+    if (mode !== "normal" && mode !== "speaker-list") return;
+    // Prefer scrolling transcript when focused there or in default normal mode
+    if (mode === "speaker-list" && focusPanel === "speakers") {
+      const n = speakerList().length;
+      if (!n) return;
+      if (deltaLines > 0) speakerSel = Math.max(0, speakerSel - 1);
+      else if (deltaLines < 0) speakerSel = Math.min(n - 1, speakerSel + 1);
+      dirty = true;
+      paint({ urgent: true });
+      return;
+    }
+    scroll = Math.max(0, scroll + deltaLines);
+    dirty = true;
+    paint({ urgent: true });
+  }
+
+  /**
+   * SGR mouse: ESC[<b;x;yM (press) / m (release).
+   * Wheel up = 64 (+ mods 4/8/16…), wheel down = 65 (+ mods).
+   */
+  function handleMouseSgr(seq: string): void {
+    const m = seq.match(/^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/);
+    if (!m) return;
+    if (m[4] !== "M") return; // press only
+    const btn = parseInt(m[1]!, 10);
+    // Wheel events set bit 6 (value 64); bit 0 distinguishes up(0)/down(1)
+    if ((btn & 0x40) === 0) return;
+    const steps = 3;
+    if ((btn & 0x1) === 0) scrollTranscript(steps); // up → older
+    else scrollTranscript(-steps); // down → newer / live
   }
 
   // key reader — UTF-8 safe (CJK 不乱码)
@@ -3432,7 +3624,7 @@ export function createTui(
       /* ignore */
     }
     try {
-      stdout.write(SHOW_CUR + ALT_OFF + RESET);
+      stdout.write(MOUSE_OFF + SHOW_CUR + ALT_OFF + RESET);
     } catch {
       /* ignore */
     }
@@ -3458,7 +3650,7 @@ export function createTui(
     stdin.resume();
     stdin.on("data", feedKeys);
   }
-  stdout.write(ALT_ON + HIDE_CUR + CLEAR);
+  stdout.write(ALT_ON + HIDE_CUR + MOUSE_ON + CLEAR);
 
   process.on("exit", restoreTerminal);
   process.on("SIGINT", () => {
@@ -3476,6 +3668,7 @@ export function createTui(
         last &&
         last.isActive &&
         !last.pending &&
+        !last.isDraft &&
         Date.now() - last.wall.getTime() > 4000
       ) {
         last.isActive = false;
@@ -3483,16 +3676,41 @@ export function createTui(
         dirty = true;
       }
     }
-    // animate spinner while AI busy or pending segments
+    // Only repaint when something actually needs animation or is dirty.
+    // (Old pulse%2 forced ~4fps full paints → merge flicker.)
     const needAnim =
-      aiBusy || segments.some((s) => s.pending) || dirty || pulse % 2 === 0;
+      dirty ||
+      aiBusy ||
+      !!livePartial ||
+      !!toast ||
+      segments.some((s) => s.pending || s.isDraft);
     if (needAnim) paint();
-  }, 120);
+  }, 160);
 
-  paint();
+  paint({ urgent: true });
 
   const handle: TuiHandle = {
     emit(seg: Segment) {
+      // ── partial: refresh single live row (never history / file / assign) ──
+      if (isPartialSegment(seg)) {
+        const text = (seg.text || "").trim();
+        if (!text) {
+          livePartial = null;
+        } else {
+          livePartial = {
+            text,
+            start: seg.start,
+            wall: seg.wall,
+            spk: seg.spk,
+          };
+        }
+        paint(); // throttled — recognizing status updates often
+        return;
+      }
+
+      // Final (or legacy omit kind) clears live row then updates history
+      livePartial = null;
+
       const main = displayText(seg);
       const rawAsr = (seg.text || "").trim();
       // Prefer stable id from pipeline for ASR→AI update
@@ -3501,14 +3719,29 @@ export function createTui(
       const sid = ensureSpeaker(seg.spk);
 
       if (existing) {
-        // Update in place (e.g. AI finished)
+        // Update in place (ASR grow / AI finished)
         const wasPending = !!existing.pending;
-        existing.originalText = main || rawAsr || existing.originalText;
-        // Never copy translation into originalText
+        const prevText = existing.originalText;
+        const nextText = main || rawAsr || existing.originalText;
+        const textGrew =
+          !!nextText &&
+          !!prevText &&
+          nextText !== prevText &&
+          nextText.length >= prevText.length;
+        // Keep showing previous source until we have a real replacement
+        if (nextText) existing.originalText = nextText;
+
+        // Translation policy (sticky — flashing was caused by clears on pending/commit):
+        // - non-empty translation always wins
+        // - only drop when draft source *grew* (merge still open, old tr stale)
+        // - pending:true / commit without translation → keep previous tr
         if (seg.translation?.trim()) {
           const tr = seg.translation.trim();
           if (tr !== existing.originalText) existing.translatedText = tr;
+        } else if (seg.draft && textGrew && !seg.pending) {
+          existing.translatedText = undefined;
         }
+        // else: keep existing.translatedText
         // Always stamp end time when we have it (including AI finalize)
         if (seg.end != null && Number.isFinite(seg.end)) {
           existing.endedAtMs = seg.end;
@@ -3517,10 +3750,17 @@ export function createTui(
           if (existing.speakerId !== sid) existing.speakerId = sid;
           markActiveSpeaker(sid);
         }
-        // Hold pending spinner for a minimum duration so it is visible
+        // Draft merge: soft state, no AI spinner. AI pending: short hold spinner.
+        if (seg.draft) {
+          existing.isDraft = true;
+          existing.isFinal = false;
+          // Don't force pending spinner during merge growth
+          if (!seg.pending) existing.pending = false;
+        }
         if (seg.pending) {
           existing.pending = true;
           existing.isFinal = false;
+          existing.isDraft = false;
           if (!pendingHold.has(id)) {
             pendingHold.set(id, Date.now() + AI_BUSY_MIN_MS);
           }
@@ -3531,28 +3771,26 @@ export function createTui(
             const row = segments.find((s) => s.id === id);
             if (!row) return;
             row.pending = false;
-            row.isFinal = true;
+            row.isFinal = !row.isDraft;
             pendingHold.delete(id);
-            dirty = true;
             paint();
           };
           if (wait > 0) {
-            // keep spinner; apply final text now, clear pending later
             existing.pending = true;
             existing.isFinal = false;
             setTimeout(finish, wait);
           } else {
             existing.pending = false;
-            existing.isFinal = true;
+            existing.isFinal = !existing.isDraft;
             pendingHold.delete(id);
           }
-          // count speaker once when first finalized
           if (sid) {
             const sp = speakers.get(sid);
             if (sp) sp.segmentCount += 1;
           }
-        } else {
+        } else if (!seg.draft) {
           existing.pending = false;
+          existing.isDraft = false;
           existing.isFinal = true;
         }
         existing.isActive = true;
@@ -3560,7 +3798,7 @@ export function createTui(
           if (s.id !== id) s.isActive = false;
         }
       } else {
-        if (sid && !seg.pending) {
+        if (sid && !seg.pending && !seg.draft) {
           const sp = speakers.get(sid)!;
           sp.segmentCount += 1;
         }
@@ -3576,7 +3814,6 @@ export function createTui(
           id,
           speakerId: sid,
           startedAtMs: seg.start,
-          // Keep end even while pending so time never sticks on "–…" after done
           endedAtMs:
             seg.end != null && Number.isFinite(seg.end) ? seg.end : undefined,
           originalText: main || rawAsr,
@@ -3585,17 +3822,18 @@ export function createTui(
             seg.translation.trim() !== (main || rawAsr)
               ? seg.translation.trim()
               : undefined,
-          isFinal: !seg.pending,
+          isFinal: !seg.pending && !seg.draft,
           isActive: true,
           pending: !!seg.pending,
+          isDraft: !!seg.draft,
           wall: seg.wall,
         };
         segments.push(ts);
         if (segments.length > 500) segments.splice(0, segments.length - 400);
       }
-      dirty = true;
 
-      if (out && !seg.pending) {
+      // Append-only file: only committed turns (not growing drafts / AI-pending)
+      if (out && !seg.pending && !seg.draft) {
         const spkLabel =
           sid && speakers.get(sid)
             ? speakers.get(sid)!.displayName
@@ -3609,13 +3847,13 @@ export function createTui(
         }
         out.write(line + "\n");
       }
-      paint();
+      // Draft/merge: throttled paint; commit/AI: slightly more responsive
+      paint(seg.draft ? undefined : { urgent: true });
     },
     setStatus(msg: string) {
       // Continuous / ambient → message bar; one-shot tips → center toast
       if (isProgressStatus(msg)) {
         status = msg;
-        dirty = true;
         paint();
       } else {
         notify(msg);
@@ -3623,30 +3861,25 @@ export function createTui(
     },
     setDevice(name: string) {
       deviceName = name;
-      dirty = true;
       paint();
     },
     setAiBusy(busy: boolean) {
       if (busy) {
         aiBusy = true;
         aiBusyHoldUntil = Date.now() + AI_BUSY_MIN_MS;
-        dirty = true;
         paint();
         return;
       }
-      // Keep footer loading visible briefly so it doesn't flash
       const wait = Math.max(0, aiBusyHoldUntil - Date.now());
       if (wait > 0) {
         setTimeout(() => {
           if (Date.now() >= aiBusyHoldUntil) {
             aiBusy = false;
-            dirty = true;
             paint();
           }
         }, wait + 10);
       } else {
         aiBusy = false;
-        dirty = true;
         paint();
       }
     },
@@ -3654,6 +3887,10 @@ export function createTui(
       if (closed) return;
       closed = true;
       clearInterval(raf);
+      if (paintTimer) {
+        clearTimeout(paintTimer);
+        paintTimer = null;
+      }
       clearToastTimer();
       try {
         keyFeeder.reset();
@@ -3684,9 +3921,8 @@ export function createTui(
   };
 
   function onResize() {
-    dirty = true;
     prevBuf = null;
-    paint();
+    paint({ urgent: true });
   }
   stdout.on("resize", onResize);
 

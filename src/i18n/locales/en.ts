@@ -94,6 +94,7 @@ const en: MessageTree = {
     exited: "Exited",
     loadingModels: "Loading models (sherpa-onnx)…",
     aiProcessing: "AI enhancing transcript…",
+    recognizing: "Recognizing…",
     listeningLive: "Listening…",
     recordSaved: "Recording saved: {file}",
     recordSaveFail: "Failed to save recording: {err}",
@@ -120,6 +121,8 @@ const en: MessageTree = {
   tui: {
     brand: "◆ baribari",
     listening: "Listening",
+    recognizing: "Recognizing",
+    liveLine: "Live",
     paused: "Paused",
     source: "Source",
     language: "Lang",
@@ -224,6 +227,10 @@ const en: MessageTree = {
       share: { label: "Toggle", help: "Broadcast transcript on LAN" },
       sharePort: { label: "Port", help: "Listen port 1024–65535" },
       shareHost: { label: "Host", help: "Bind address, default 0.0.0.0" },
+      vadPreset: {
+        label: "VAD preset",
+        help: "←→ Balanced / Meeting / Smooth / Aggressive",
+      },
       vadThr: { label: "VAD thr", help: "Low=sensitive, high=strict" },
       vadMinSp: { label: "Min speech", help: "Drop segments shorter than this" },
       vadSil: { label: "Silence", help: "Silence length to end segment" },
@@ -232,6 +239,14 @@ const en: MessageTree = {
     },
     keys: "↑↓ move  ←→ change  Enter edit/save  Space toggle  Esc close",
     keysEdit: "Enter save  Ctrl+U clear  Esc cancel",
+    vadPreset: {
+      balanced: "Balanced",
+      meeting: "Meeting",
+      smooth: "Smooth",
+      aggressive: "Aggressive",
+      custom: "Custom",
+      applied: "VAD preset → {name}",
+    },
     provider: {
       openai: "OpenAI",
       gemini: "Google Gemini",
@@ -467,6 +482,10 @@ Environment:
       mergeSaved: "Merge saved",
       mergeDiscarded: "Merge discarded",
       mergeNeedPanel: "Open speaker panel (Tab) then press m",
+      playerMissing:
+        "No audio player: install ffmpeg (with ffplay) or keep baribari's ffmpeg-static",
+      playerFfmpegFallback:
+        "Playing via ffmpeg (ffplay not found) · install ffplay for smoother seek",
     },
     renameTitle: "Session name",
     renameHint: "Save / Cancel on dialog border",

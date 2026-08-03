@@ -149,7 +149,9 @@ eval "$(baribari completion bash)"
 | `Tab` | フォーカス切替 |
 | `q` | 終了 |
 
-字幕は **VAD が区間を切った後** に出ます（逐語ストリームではありません）。
+**レイアウト：** 話者 · リアルタイム転写 · デバイス / 録音 / 共有  
+**Live vs final：** 転写欄の最下段に更新可能な **live 行** があります。現在の VAD 区間を SenseVoice がデコードしている間は状態表示（例:「認識中…」、偽トークンは出しません）。エンドポイント後に live 行は消え、**final** が履歴に追加されます。セッション保存・LAN 共有・AI 校正/翻訳は **final のみ** を使います。  
+（内部は VAD 区切り + オフライン SenseVoice であり、逐語オンライン ASR ではありません。）
 
 ---
 
@@ -158,9 +160,14 @@ eval "$(baribari completion bash)"
 ```text
 ~/.config/baribari/
 ├── config.json
+├── replace.json     # ローカル辞書（AI なし、初回に例を生成）
 ├── models/
+├── sessions/
+├── speakers/
 └── recordings/
 ```
+
+**ローカル整形（AI 不要）：** ASR と同話者ターン結合のあと、任意の AI の前に空白・重複句読点の整理と `replace.json` 置換を適用します。`{ "replacements":[…] }` または `{ "誤":"正" }` 形式。ファイル更新は mtime で次回セグメントから反映。
 
 環境変数: `BARIBARI_CONFIG_DIR` · `BARIBARI_UI_LANG` · `BARIBARI_AI_KEY` / `OPENAI_API_KEY`
 

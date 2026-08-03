@@ -94,6 +94,7 @@ const zh: MessageTree = {
     exited: "已退出",
     loadingModels: "加载模型 (sherpa-onnx)…",
     aiProcessing: "AI 正在增强转写…",
+    recognizing: "识别中…",
     listeningLive: "监听中…",
     recordSaved: "已保存录音: {file}",
     recordSaveFail: "录音保存失败: {err}",
@@ -120,6 +121,8 @@ const zh: MessageTree = {
   tui: {
     brand: "◆ baribari",
     listening: "监听中",
+    recognizing: "识别中",
+    liveLine: "实时",
     paused: "暂停",
     source: "音源",
     language: "语言",
@@ -224,6 +227,10 @@ const zh: MessageTree = {
       share: { label: "开关", help: "局域网广播转写" },
       sharePort: { label: "端口", help: "监听端口 1024–65535" },
       shareHost: { label: "地址", help: "绑定地址，默认 0.0.0.0" },
+      vadPreset: {
+        label: "VAD 预设",
+        help: "←→ 均衡 / 会议 / 顺滑 / 激进",
+      },
       vadThr: { label: "VAD 阈值", help: "低=更灵敏，高=更严" },
       vadMinSp: { label: "最短语音", help: "短于此时长的段丢弃" },
       vadSil: { label: "静音切段", help: "静音多久就切段送识别" },
@@ -232,6 +239,14 @@ const zh: MessageTree = {
     },
     keys: "↑↓ 移动  ←→ 改值  Enter 编辑/保存  Space 开关  Esc 关闭",
     keysEdit: "Enter 保存  Ctrl+U 清空  Esc 取消",
+    vadPreset: {
+      balanced: "均衡",
+      meeting: "会议",
+      smooth: "顺滑",
+      aggressive: "激进",
+      custom: "自定义",
+      applied: "VAD 预设 → {name}",
+    },
     provider: {
       openai: "OpenAI",
       gemini: "Google Gemini",
@@ -467,6 +482,10 @@ const zh: MessageTree = {
       mergeSaved: "已保存合并",
       mergeDiscarded: "已放弃合并",
       mergeNeedPanel: "请先 Tab 到说话人栏再按 m",
+      playerMissing:
+        "无法播放：请安装 ffmpeg（含 ffplay），或保留 baribari 自带的 ffmpeg-static",
+      playerFfmpegFallback:
+        "已用 ffmpeg 播放（未找到 ffplay）· 安装 ffplay 可更流畅拖动",
     },
     renameTitle: "会话名称",
     renameHint: "边框底部 Save / Cancel",

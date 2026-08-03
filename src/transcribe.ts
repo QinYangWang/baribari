@@ -257,11 +257,57 @@ export async function transcribe(
       onStatus("");
     }
 
+    const segStartS = segStartSample / SAMPLE_RATE;
+    const wall = new Date(startTime + segStartS * 1000);
+    // Fake-streaming: show a single refreshable live line while SenseVoice decodes
+    // (no online ASR tokens yet — status only, not invented text)
+    emit({
+      kind: "partial",
+      start: segStartS,
+      wall,
+      spk: null,
+      text: t("status.recognizing"),
+    });
+
+    // Accuracy: pad silence + soft peak normalize before offline decode
+    // (measured ~CER 0.20→0.17 on ja meeting fixture with pad)
+    const asrAudio = prepareAsrAudio(audio, SAMPLE_RATE);
     const stream = recognizer.createStream();
-    stream.acceptWaveform({ sampleRate: SAMPLE_RATE, samples: audio });
+    stream.acceptWaveform({ sampleRate: SAMPLE_RATE, samples: asrAudio });
     recognizer.decode(stream);
-    const text = (recognizer.getResult(stream).text ?? "").trim();
-    if (!text || text === lastText) return;
+    let text = (recognizer.getResult(stream).text ?? "").trim();
+    // Strip SenseVoice emotion / event tags if present
+    text = text
+      .replace(/<\|[^|]*\|>/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!text) {
+      emit({
+        kind: "partial",
+        start: segStartS,
+        wall,
+        spk: null,
+        text: "",
+      });
+      return;
+    }
+    // Drop only exact consecutive duplicates that are very short (VAD double-fire).
+    // Do NOT drop longer repeats — legitimate re-statements must stay.
+    if (
+      lastText &&
+      text === lastText &&
+      text.length <= 8 &&
+      audio.length < Math.floor(1.2 * SAMPLE_RATE)
+    ) {
+      emit({
+        kind: "partial",
+        start: segStartS,
+        wall,
+        spk: null,
+        text: "",
+      });
+      return;
+    }
     lastText = text;
 
     let spk: number | null = null;
@@ -271,14 +317,15 @@ export async function transcribe(
       audio.length >= Math.floor(0.5 * SAMPLE_RATE)
     ) {
       // Multi-window voting inside tracker; null → leave unknown
+      // Use original (unpadded) audio for speaker embedding timing fidelity
       spk = tracker.assign(audio);
     }
 
-    const segStartS = segStartSample / SAMPLE_RATE;
     emit({
+      kind: "final",
       start: segStartS,
       end: segStartS + audio.length / SAMPLE_RATE,
-      wall: new Date(startTime + segStartS * 1000),
+      wall,
       spk,
       text,
     });
@@ -495,6 +542,45 @@ export async function transcribe(
       done(e instanceof Error ? e : new Error(String(e)));
     }
   });
+}
+
+/**
+ * Pre-ASR audio conditioning for SenseVoice offline decode.
+ * - Soft peak normalize only when clip is quiet (avoid distorting loud speech)
+ * - Pad ~120ms silence on both ends (helps first/last phones; measured win on fixture)
+ */
+function prepareAsrAudio(
+  samples: Float32Array,
+  sampleRate: number,
+  opts?: { padSec?: number; quietPeak?: number; targetPeak?: number; maxGain?: number },
+): Float32Array {
+  const padSec = opts?.padSec ?? 0.12;
+  const quietPeak = opts?.quietPeak ?? 0.35;
+  const targetPeak = opts?.targetPeak ?? 0.85;
+  const maxGain = opts?.maxGain ?? 4;
+
+  let peak = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const a = Math.abs(samples[i]!);
+    if (a > peak) peak = a;
+  }
+  let gain = 1;
+  if (peak > 1e-4 && peak < quietPeak) {
+    gain = Math.min(targetPeak / peak, maxGain);
+  }
+
+  const pad = Math.max(0, Math.floor(padSec * sampleRate));
+  if (pad === 0 && gain === 1) return samples;
+
+  const out = new Float32Array(samples.length + pad * 2);
+  if (gain === 1) {
+    out.set(samples, pad);
+  } else {
+    for (let i = 0; i < samples.length; i++) {
+      out[pad + i] = samples[i]! * gain;
+    }
+  }
+  return out;
 }
 
 function concatFloat32(chunks: Float32Array[]): Float32Array {

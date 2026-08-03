@@ -3,10 +3,13 @@
  *
  *   ~/.config/baribari/           (BARIBARI_CONFIG_DIR overrides)
  *     config.json
+ *     replace.json                # local non-AI dictionary polish
  *     models/
  *       silero_vad.onnx
  *       sherpa-onnx-sense-voice-…/
  *       3dspeaker_….onnx
+ *     sessions/
+ *     speakers/
  *     recordings/
  *
  * Custom paths may be set in config.json (modelsDir / models.*).

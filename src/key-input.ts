@@ -95,10 +95,12 @@ export function createKeyFeeder(onKey: KeyHandler): {
           escBuf.length >= 3 &&
           (escBuf.startsWith("\x1b[") || escBuf.startsWith("\x1bO"))
         ) {
+          // CSI final byte: letters / ~  (arrows, PgUp, SGR mouse …M/m)
           if (/[A-Za-z~]$/.test(escBuf)) {
             clearEscTimer();
             emitEsc();
-          } else if (escBuf.length > 16) {
+          } else if (escBuf.length > 48) {
+            // SGR mouse can be longer: ESC[<btn;x;yM
             clearEscTimer();
             emitEsc();
           }

@@ -395,6 +395,7 @@ export function printPaths(): void {
   const p = modelPaths(modelOverridesFromSettings());
   println(`configDir:       ${p.configDir}`);
   println(`config.json:     ${path.join(p.configDir, "config.json")}`);
+  println(`replace.json:    ${path.join(p.configDir, "replace.json")}  # local non-AI dict`);
   println(`modelsDir:       ${p.modelsDir}`);
   println(`vad:             ${p.vad}`);
   println(`senseVoiceModel: ${p.senseVoiceModel}`);

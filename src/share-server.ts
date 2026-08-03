@@ -138,7 +138,7 @@ connect();
 function toWire(seg: Segment) {
   return {
     start: seg.start,
-    end: seg.end,
+    end: seg.end ?? seg.start,
     wallIso: seg.wallIso || seg.wall.toISOString(),
     spk: seg.spk,
     text: seg.text,
