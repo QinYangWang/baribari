@@ -37,7 +37,8 @@ jobs:
           cache: npm
 
       - name: Install
-        run: npm ci || npm install
+        # bionic-audio is Windows-only; docs do not execute it.
+        run: npm ci --force --ignore-scripts
 
       - name: Build docs
         run: npm run docs:build
