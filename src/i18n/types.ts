@@ -303,6 +303,7 @@ export type MessageTree = {
     cmdSetup: string;
     setupDownload: string;
     setupYes: string;
+    setupManual: string;
     setupSkipSpk: string;
     setupNoSpk: string;
     setupModelsDir: string;
@@ -374,6 +375,8 @@ export type MessageTree = {
     canStart: string;
     stillMissing: string;
     afterManual: string;
+    nextSteps: string;
+    manualCommand: string;
     firstRun: string;
   };
   sharePage: {

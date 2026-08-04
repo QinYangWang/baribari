@@ -6,14 +6,32 @@
 
 SenseVoice · Silero VAD · 話者識別 · AI 校正/翻訳 · LAN 共有
 
+<img src="./docs/public/screenshots/demo-mode.png" alt="タイムライン、話者ラベル、原文、翻訳を表示する Demo セッション" width="960">
+
 [![npm](https://img.shields.io/npm/v/baribari.svg)](https://www.npmjs.com/package/baribari)
 [![Node](https://img.shields.io/node/v/baribari.svg)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
 [English](./README.md) · [中文](./README.zh.md) · **日本語**
 
+[ドキュメント](https://qinyangwang.github.io/baribari/) · [設計 docs](./docs/)
+
+**Bash**
+
 ```bash
-npm i -g baribari && baribari
+npm i -g baribari && baribari setup --download && baribari
+```
+
+**PowerShell**
+
+```powershell
+npm i -g baribari; baribari setup --download; baribari
+```
+
+**CMD**
+
+```bat
+npm i -g baribari & baribari setup --download & baribari
 ```
 
 </div>
@@ -24,13 +42,23 @@ npm i -g baribari && baribari
 
 | 機能 | 内容 |
 |------|------|
-| **会議向け TUI** | 話者 · リアルタイム転写 · デバイス/録音/共有 |
-| **ローカル ASR** | SenseVoice + Silero VAD（クラウド不要で認識可） |
-| **話者ラベル** | 声紋 + 複数窓投票 |
-| **任意の AI** | OpenAI 互換の校正・翻訳 |
-| **セッション** | 自動保存；`resume` 閲覧 · 続行録音 · AI 翻訳/要約 · TUI 内共有 |
-| **LAN 共有** | ホストが配信、ブラウザ/CLI で参加 |
-| **ユーザー設定** | `~/.config/baribari` |
+| **会議向け TUI** | 話者、リアルタイム文字起こし、デバイス、録音、共有状態を一画面に表示 |
+| **ローカル音声認識** | SenseVoice と Silero VAD を使い、クラウドなしで文字起こし |
+| **話者ラベル** | 声紋で話者を区別し、グローバル名簿で頻繁に会う参加者を次回から自動照合 |
+| **任意の AI 機能** | OpenAI 互換 API を使った校正、翻訳、要約と、主要サービスの Provider プリセット |
+| **セッションの自動保存** | `resume` で再生、続行録音、翻訳、要約、再共有 |
+| **LAN 共有** | 1 台の PC が文字起こしを行い、ほかの参加者はブラウザや CLI から字幕を確認 |
+| **ローカル保存** | 設定、モデル、セッションを既定で `~/.config/baribari` に保存 |
+
+---
+
+## 画面イメージ
+
+| ライブ文字起こし | 設定 |
+|:---:|:---:|
+| ![左側に話者、右側に認識中の日本語字幕を表示するライブ文字起こし画面](./docs/public/screenshots/live-transcription.png) | ![表示言語、音声認識、AI、録音を変更する設定パネル](./docs/public/screenshots/settings.png) |
+| **Demo・再生モード** | **Web 共有** |
+| ![タイムライン、話者ラベル、原文、翻訳を表示する Demo セッション](./docs/public/screenshots/demo-mode.png) | ![話者別の確定字幕と翻訳を表示するブラウザ共有画面](./docs/public/screenshots/web-share.png) |
 
 ---
 
@@ -51,20 +79,37 @@ npm i -g baribari && baribari
 
 ## インストール
 
-**要件:** Node.js **≥ 18**。マイク+システム音声は **Windows** が最も充実。
+**動作要件:** Node.js **≥ 18**。**Windows** では、マイクとシステム音声を含む最も完全な音声収録を利用できます。Linux/macOS は主にマイク収録に対応し、利用可否は `node-cpal` に依存します。
 
 ```bash
 npm install -g baribari
 ```
+
+ソースから:
+
+```bash
+git clone https://github.com/QinYangWang/baribari.git
+cd baribari
+npm install
+npm run build
+npm link
+```
+
+> **シェル:** つなげるときは bash/zsh/fish は `&&`、PowerShell は `;`、cmd は `&`。下の複数行はそのまま使えます。
 
 ---
 
 ## クイックスタート
 
 ```bash
-baribari setup --download   # 表示言語 + モデル
-baribari                    # 全画面 TUI
-baribari doctor             # 診断
+# 初回のみ：表示言語を選び、必要なモデルをダウンロード
+baribari setup --download
+
+# リアルタイム文字起こしを開始
+baribari
+
+# 問題がある場合は動作環境を診断
+baribari doctor
 ```
 
 ---
@@ -76,19 +121,19 @@ baribari [options]               ライブ転写（既定）
 baribari setup [options]         モデル確認/DL
 baribari paths | config          パス表示
 baribari devices                 マイク一覧
-baribari doctor                  診断
+baribari doctor                  動作環境を確認・診断
 baribari session list            保存セッション一覧
 baribari session rm <id>         セッション削除
-baribari resume [id]             再生（既定: demo）
-baribari demo                    resume demo と同じ
-baribari join <url>              LAN 共有に参加
+baribari resume [id]             セッションを閲覧・再生（既定: demo）
+baribari demo                    baribari resume demo と同じ
+baribari join <url>              LAN 共有に参加（受信のみ）
 baribari completion [shell]      bash | zsh | fish | powershell
 baribari -h | -V                 ヘルプ / バージョン
 ```
 
 ### セッション
 
-会議は自動保存: `~/.config/baribari/sessions/<id>/`（字幕；`r` で録音すると `audio.wav`）。
+ライブ文字起こしは `~/.config/baribari/sessions/<id>/` に自動保存されます。字幕は JSONL ファイルに記録され、`r` で録音を開始すると音声が `audio.wav` に保存されます。
 
 ```bash
 baribari session list
@@ -99,7 +144,7 @@ baribari resume demo
 baribari resume ses_xxxx
 ```
 
-削除は既定で **完全な session id** が必要です。
+既定では、削除時に**完全なセッション ID**を指定し、同じ ID を再入力して確認する必要があります。
 
 **再生キー（ライブと別・フッターと一致）:**
 
@@ -117,18 +162,21 @@ baribari resume ses_xxxx
 | `h` | LAN 共有 ON/OFF（終了しない） |
 | `q` | 終了 |
 
-ライブ用の `r` 録音・`Tab`・`1–9` は resume では使えません。
+Resume モードでは、ライブ文字起こし用の `r` 録音、`Tab` による領域切り替え、`1–9` による話者割り当ては使用できません。
 
-`audio-part-*.wav` と `audio.wav` は可能な限り結合。試す: `baribari resume demo`。
+`audio-part-*.wav` と `audio.wav` は、形式が一致する場合に可能な限り結合されます。Resume モードは `baribari resume demo` で試せます。
 
 | 主なオプション | 説明 |
 |-----------------|------|
 | `--lang` | 認識 `auto\|zh\|en\|ja\|ko\|yue` |
 | `--ui-lang` | 表示 `zh\|ja\|en` |
 | `--source` | `mic\|loopback\|both` |
-| `--ai` / `--ai-translate` | AI 強化 / 翻訳先 |
+| `--ai` / `--no-ai` | AI 強化 |
+| `--ai-correct` / `--no-ai-correct` | AI 校正（翻訳と独立） |
+| `--ai-translate` | 翻訳先 |
 | `--share` / `join` | LAN 共有 |
 | `--vad-min-silence` | 無音で切る秒数（小さいほど頻繁） |
+| `--vad-max-speech` | 1 区間の最大長（強制切断） |
 
 ```bash
 eval "$(baribari completion bash)"
@@ -138,20 +186,43 @@ eval "$(baribari completion bash)"
 
 ---
 
+## グローバル話者名簿
+
+声紋と表示名:
+
+```text
+~/.config/baribari/speakers/roster.json
+```
+
+- ライブ開始時に名簿をスロット `1…G` として読み込み
+- TUI 話者リスト（`Tab`）→ 自動検出話者を **Enter で改名** → 名簿に保存
+- 以降の会議で声が一致すれば自動ラベル；終了時に EMA 更新して書き戻し
+- 不要なら `--no-spk`
+
+---
+
 ## TUI キー
 
 | キー | 動作 |
 |------|------|
-| `p` | 一時停止 |
-| `s` | 設定 |
-| `h` | 共有 |
-| `r` | 録音 |
-| `Tab` | フォーカス切替 |
+| `p` / `Space` | 一時停止 / 再開 |
+| `s` | 設定（スクロール可能なグループ） |
+| `h` | LAN 共有 ON/OFF |
+| `r` | 録音 → セッション `audio.wav` |
+| `c` | 画面上の転写をクリア（ファイルは消さない） |
+| `Tab` | フォーカス: 話者 ↔ 転写 |
+| `1`–`9` | 直前セグメントを話者 *N* に割当（話者フォーカス時） |
+| `m` | **話者統合**（話者リスト: 元 → 先 → Enter） |
+| `e` | セッション名の変更 |
+| `↑` `↓` / ホイール | 転写スクロール（上=古い；`g` でライブ末尾へ） |
 | `q` | 終了 |
 
 **レイアウト：** 話者 · リアルタイム転写 · デバイス / 録音 / 共有  
-**Live vs final：** 転写欄の最下段に更新可能な **live 行** があります。現在の VAD 区間を SenseVoice がデコードしている間は状態表示（例:「認識中…」、偽トークンは出しません）。エンドポイント後に live 行は消え、**final** が履歴に追加されます。セッション保存・LAN 共有・AI 校正/翻訳は **final のみ** を使います。  
-（内部は VAD 区切り + オフライン SenseVoice であり、逐語オンライン ASR ではありません。）
+**Live vs final：** 転写欄の最下段に更新可能な **live 行**。現在の VAD 区間を SenseVoice がデコード中は状態表示（例:「認識中…」、偽トークンなし）。エンドポイント後に live は消え **final** が履歴へ。セッション・LAN 共有・AI は **final のみ**。
+
+（内部は VAD + オフライン SenseVoice。逐語オンライン ASR ではない。）
+
+**設定：** 認識、AI（翻訳先・Provider プリセット）、音声、共有、VAD プリセット、表示言語。
 
 ---
 
@@ -163,11 +234,17 @@ eval "$(baribari completion bash)"
 ├── replace.json     # ローカル辞書（AI なし、初回に例を生成）
 ├── models/
 ├── sessions/
-├── speakers/
+├── speakers/        # グローバル名簿 roster.json
 └── recordings/
 ```
 
-**ローカル整形（AI 不要）：** ASR と同話者ターン結合のあと、任意の AI の前に空白・重複句読点の整理と `replace.json` 置換を適用します。`{ "replacements":[…] }` または `{ "誤":"正" }` 形式。ファイル更新は mtime で次回セグメントから反映。
+初回 UI 言語: `1) 中文` · `2) 日本語` · `3) English (default)`。Enter のみは **English（3）**。番号は画面の並びと一致。
+
+**VAD プリセット:** Balanced（既定）· Meeting（複数話者向け・推奨）· Smooth · Aggressive。
+
+**同一話者ターン結合（`speakerTurn`）:** 短い VAD 断片を同話者なら最大 3 個まで結合してから AI。詳細は [docs/asr-pipeline.md](./docs/asr-pipeline.md)。
+
+**ローカル整形（AI 不要）：** ASR と同話者結合のあと、任意 AI の前に句読点整理と `replace.json`。`{ "replacements":[…] }` または `{ "誤":"正" }`。mtime でホットリロード。
 
 環境変数: `BARIBARI_CONFIG_DIR` · `BARIBARI_UI_LANG` · `BARIBARI_AI_KEY` / `OPENAI_API_KEY`
 
@@ -186,10 +263,10 @@ baribari paths
 
 ```bash
 export BARIBARI_AI_KEY=sk-...
-baribari --ai --ai-translate en
+baribari --ai --ai-translate en --ai-model gpt-4o-mini
 ```
 
-OpenAI 互換 Chat Completions。原文と訳文は別行。
+OpenAI 互換 Chat Completions。原文と訳文は別行。TUI **設定 → AI → Provider** で OpenAI / Gemini / DeepSeek などのプリセットを切替。詳細は English README。
 
 ---
 
@@ -202,6 +279,21 @@ baribari join http://192.168.x.x:8787/
 
 ---
 
+## ドキュメントサイト
+
+設計メモは [`docs/`](./docs/)。GitHub Pages（VitePress）:
+
+```bash
+npm run docs:dev
+npm run docs:build
+```
+
+**Settings → Pages → Source: GitHub Actions** を有効化後:
+
+`https://qinyangwang.github.io/baribari/`
+
+---
+
 ## 開発
 
 ```bash
@@ -210,10 +302,11 @@ npm run hooks:install    # pre-commit: typecheck + check:i18n
 npm run typecheck
 npm run check:i18n       # locale キー一致 (zh/ja/en)
 npm run precommit
+npm run docs:dev
 npm run dev -- --demo
 ```
 
-公開: `package.json` と同じ `v*` タグを push（Actions → npm）、または `npm publish`。
+公開: `package.json` と同じ `v*` タグ（例 `v1.5.0`）を push → Actions → npm。
 
 ---
 

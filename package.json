@@ -1,6 +1,6 @@
 {
   "name": "baribari",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "Real-time meeting transcription CLI (SenseVoice + VAD + speaker ID + AI + LAN share)",
   "type": "module",
   "main": "dist/index.js",
@@ -23,7 +23,10 @@
     "precommit": "node scripts/pre-commit.mjs",
     "hooks:install": "git config core.hooksPath .githooks",
     "prepublishOnly": "npm run typecheck && npm run check:i18n && npm run build",
-    "fixtures:meetings": "node scripts/generate-meeting-fixtures.mjs"
+    "fixtures:meetings": "node scripts/generate-meeting-fixtures.mjs",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
   },
   "engines": {
     "node": ">=18"
@@ -57,9 +60,14 @@
   "devDependencies": {
     "@types/node": "^22.15.30",
     "@types/ws": "^8.18.1",
+    "ffmpeg-static": "^5.2.0",
+    "node-edge-tts": "^1.2.10",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3",
-    "node-edge-tts": "^1.2.10",
-    "ffmpeg-static": "^5.2.0"
+    "vitepress": "^1.6.4"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "esbuild@0.21.5": true
   }
 }

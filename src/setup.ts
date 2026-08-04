@@ -43,9 +43,6 @@ function println(s = ""): void {
 function printManualGuide(modelsDir: string): void {
   println();
   println(`${BOLD}${ACC}${t("setup.title")}${RESET}`);
-  println(`${DIM}${t("setup.configDir", { dir: configDir() })}${RESET}`);
-  println(`${DIM}${t("setup.modelsDir", { dir: modelsDir })}${RESET}`);
-  println();
   println(t("setup.placeFiles"));
   println();
   println(`${BOLD}${t("setup.vad")}${RESET}  ${DIM}${MODEL_DOWNLOADS.vad.approx}${RESET}`);
@@ -77,9 +74,6 @@ function printManualGuide(modelsDir: string): void {
   }
 }${RESET}`);
   println();
-  println(t("setup.autoDownload"));
-  println(t("setup.statusOnly"));
-  println();
 }
 
 async function downloadFile(
@@ -90,7 +84,6 @@ async function downloadFile(
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   const tmp = dest + ".partial";
   println(`${ACC}↓${RESET} ${label}`);
-  println(`  ${DIM}${url}${RESET}`);
 
   const res = await fetch(url, { redirect: "follow" });
   if (!res.ok || !res.body) {
@@ -242,22 +235,31 @@ export async function ensureUiLang(opts?: {
     println(`${BOLD}${ACC}◆ baribari${RESET}`);
     println(`${DIM}UI language / 界面语言 / 表示言語${RESET}`);
     println();
+    const defaultIdx = Math.max(0, UI_LANGS.indexOf(DEFAULT_UI_LANG));
     UI_LANGS.forEach((lang, i) => {
       const mark = lang === DEFAULT_UI_LANG ? " (default)" : "";
       println(`  ${i + 1}) ${uiLangLabel(lang)}${mark}`);
     });
     println();
     const ans = (
-      await ask(rl, `Select [1-${UI_LANGS.length}] (default 1=English): `)
+      await ask(
+        rl,
+        `Select [1-${UI_LANGS.length}] (default ${defaultIdx + 1}=${uiLangLabel(DEFAULT_UI_LANG)}): `,
+      )
     )
       .trim()
       .toLowerCase();
 
     let pick: UiLang = DEFAULT_UI_LANG;
-    if (ans === "" || ans === "1" || ans === "en" || ans === "english") pick = "en";
-    else if (ans === "2" || ans === "zh" || ans === "cn" || ans === "中文") pick = "zh";
-    else if (ans === "3" || ans === "ja" || ans === "jp" || ans === "日本語") pick = "ja";
-    else {
+    if (ans === "") {
+      pick = DEFAULT_UI_LANG;
+    } else if (ans === "en" || ans === "english") {
+      pick = "en";
+    } else if (ans === "zh" || ans === "cn" || ans === "中文") {
+      pick = "zh";
+    } else if (ans === "ja" || ans === "jp" || ans === "日本語") {
+      pick = "ja";
+    } else {
       const n = parseInt(ans, 10);
       if (n >= 1 && n <= UI_LANGS.length) pick = UI_LANGS[n - 1]!;
     }
@@ -278,6 +280,7 @@ export async function ensureUiLang(opts?: {
 export async function runSetup(opts?: {
   download?: boolean;
   yes?: boolean;
+  manual?: boolean;
   skipSpk?: boolean;
   modelsDir?: string;
   uiLangFlag?: string;
@@ -320,12 +323,18 @@ export async function runSetup(opts?: {
 
   println(`${WARN}${t("setup.missingCount", { n: check.missing.length })}${RESET}`);
   for (const m of check.missing) {
-    println(`  - [${m.key}] ${m.path}`);
+    const relative = path.relative(check.paths.modelsDir, m.path);
+    println(`  ${WARN}•${RESET} ${relative && !relative.startsWith("..") ? relative : m.path}`);
+  }
+  println();
+
+  if (opts?.manual) {
+    printManualGuide(check.paths.modelsDir);
+    return false;
   }
 
-  printManualGuide(check.paths.modelsDir);
-
   let doDownload = !!opts?.download || !!opts?.yes;
+  let declinedDownload = false;
   if (!doDownload && process.stdin.isTTY && !opts?.download) {
     const rl = readline.createInterface({
       input: process.stdin,
@@ -334,6 +343,7 @@ export async function runSetup(opts?: {
     try {
       const ans = (await ask(rl, t("setup.promptDownload"))).trim().toLowerCase();
       doDownload = ans === "" || ans === "y" || ans === "yes";
+      declinedDownload = !doDownload;
     } finally {
       rl.close();
     }
@@ -356,7 +366,13 @@ export async function runSetup(opts?: {
     return false;
   }
 
-  println(t("setup.afterManual"));
+  if (declinedDownload) {
+    printManualGuide(check.paths.modelsDir);
+  } else {
+    println(t("setup.nextSteps"));
+    println(`  ${t("setup.autoDownload")}`);
+    println(`  ${t("setup.manualCommand")}`);
+  }
   return false;
 }
 

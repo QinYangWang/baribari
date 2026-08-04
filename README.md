@@ -6,14 +6,32 @@
 
 SenseVoice · Silero VAD · Speaker ID · AI correct/translate · LAN share
 
+<img src="./docs/public/screenshots/demo-mode.png" alt="Demo session with a timeline, speaker labels, original text, and translations" width="960">
+
 [![npm](https://img.shields.io/npm/v/baribari.svg)](https://www.npmjs.com/package/baribari)
 [![Node](https://img.shields.io/node/v/baribari.svg)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
 **English** · [中文](./README.zh.md) · [日本語](./README.ja.md)
 
+[Documentation](https://qinyangwang.github.io/baribari/) · [Design docs](./docs/)
+
+**Bash**
+
 ```bash
-npm i -g baribari && baribari
+npm i -g baribari && baribari setup --download && baribari
+```
+
+**PowerShell**
+
+```powershell
+npm i -g baribari; baribari setup --download; baribari
+```
+
+**CMD**
+
+```bat
+npm i -g baribari & baribari setup --download & baribari
 ```
 
 </div>
@@ -24,13 +42,23 @@ npm i -g baribari && baribari
 
 | Feature | What you get |
 |---------|----------------|
-| **Meeting-first TUI** | Speakers · live transcript · device/record/share status |
-| **Local ASR** | SenseVoice + Silero VAD via sherpa-onnx (no cloud required for speech) |
-| **Speaker labels** | Embedding ID + **global roster** (fixed attendees auto-match next meeting) |
-| **Optional AI** | OpenAI-compatible correct + translate |
-| **Sessions** | Auto-saved transcripts; `resume` browser · continue recording · AI translate/summary · in-TUI share |
-| **LAN share** | One host broadcasts; others join in the browser or CLI |
-| **Your machine** | Config & models under `~/.config/baribari` |
+| **Meeting-first TUI** | See speakers, live transcripts, devices, recording, and sharing status in one place |
+| **Local speech recognition** | SenseVoice and Silero VAD run through sherpa-onnx; speech recognition does not require the cloud |
+| **Speaker labels** | Voice embeddings distinguish speakers, while a global roster recognizes frequent attendees in later meetings |
+| **Optional AI** | Use an OpenAI-compatible API for correction, translation, and summaries |
+| **Saved sessions** | Reopen transcripts to play audio, continue recording, translate, summarize, or share |
+| **LAN sharing** | One computer transcribes; others follow captions in a browser or CLI |
+| **Local storage** | Configuration, models, and sessions live under `~/.config/baribari` by default |
+
+---
+
+## Screenshots
+
+| Live transcription | Settings |
+|:---:|:---:|
+| ![Live transcription view with speaker list and incoming Japanese transcript](./docs/public/screenshots/live-transcription.png) | ![Settings panel for interface language, speech recognition, AI, and audio](./docs/public/screenshots/settings.png) |
+| **Demo and resume mode** | **Web sharing** |
+| ![Demo session with a timeline, speaker labels, original text, and translations](./docs/public/screenshots/demo-mode.png) | ![Browser view of a shared live session with speaker-labelled captions and translations](./docs/public/screenshots/web-share.png) |
 
 ---
 
@@ -44,6 +72,8 @@ npm i -g baribari && baribari
 - [Models](#models)
 - [AI enhancement](#ai-enhancement)
 - [LAN share](#lan-share)
+- [How transcription timing works](#how-transcription-timing-works)
+- [Documentation site](#documentation-site)
 - [Development](#development)
 - [License](#license)
 
@@ -51,7 +81,7 @@ npm i -g baribari && baribari
 
 ## Install
 
-**Requirements:** Node.js **≥ 18**. Full audio capture (mic + loopback) works best on **Windows**. Mic-only works on Linux/macOS where `node-cpal` is available.
+**Requirements:** Node.js **≥ 18**. **Windows** supports the most complete audio capture, including microphone and system audio. Linux and macOS primarily support microphone capture where `node-cpal` is available.
 
 ```bash
 npm install -g baribari
@@ -67,6 +97,8 @@ npm run build
 npm link
 ```
 
+> **Shell note:** chain with `&&` (bash/zsh/fish), `;` (PowerShell), or `&` (cmd). Multi-line blocks below are fine everywhere.
+
 ---
 
 ## Quick start
@@ -77,12 +109,15 @@ baribari setup --download
 
 # 2) Start live transcription (fullscreen TUI)
 baribari
+```
 
-# 3) Optional: system audio (Windows), AI translate, LAN share
+Enable only the optional features you need:
+
+```bash
 baribari --source loopback --ai --ai-translate en --share
 ```
 
-Health check anytime:
+If something is not working, check the environment with:
 
 ```bash
 baribari doctor
@@ -122,13 +157,17 @@ baribari -h | -V                   Help / version
 | `--record <path>` | Start WAV recording on launch |
 | `--record-dir <dir>` | Default recording directory |
 | `--ai` / `--no-ai` | Toggle AI enhancement |
+| `--ai-correct` / `--no-ai-correct` | Toggle AI typo correction (independent of translate) |
 | `--ai-translate <lang>` | Translation target (empty = off) |
 | `--ai-base-url <url>` | OpenAI-compatible base URL |
 | `--ai-model <id>` | Model id |
 | `--ai-key <key>` | API key (prefer env `BARIBARI_AI_KEY`) |
 | `--share` / `--share-port <n>` | LAN share host |
 | `--join <url>` | Join share (also: `baribari join <url>`) |
+| `--vad-threshold <n>` | Silero speech probability threshold |
 | `--vad-min-silence <sec>` | Silence duration to split segments (lower = snappier) |
+| `--vad-min-speech <sec>` | Drop bursts shorter than this |
+| `--vad-max-speech <sec>` | Force-cut long monologues |
 | `--demo` | Same as `baribari resume demo` (built-in sample session) |
 
 ### Setup
@@ -277,6 +316,33 @@ Default directory (override with `BARIBARI_CONFIG_DIR`):
 
 CLI flags always override `config.json`. UI language is stored as `uiLang` and chosen on first run if missing.
 
+**First-run UI language picker** lists `1) 中文` · `2) 日本語` · `3) English (default)`. Enter / empty keeps **English** (item 3). Numbers always match the on-screen list.
+
+### VAD presets (Settings)
+
+In the TUI: **Settings → VAD preset** (`←` / `→`). Picking a preset writes the numeric VAD fields (you can still fine-tune afterward → shows as *custom*).
+
+| Preset | min silence | max speech | Intent |
+|--------|-------------|------------|--------|
+| **Balanced** (default) | 0.6s | 30s | Fewer cuts, longer phrases |
+| **Meeting** | 0.32s | 9s | Multi-speaker turn-taking (recommended) |
+| **Smooth** | 0.4s | 12s | Fewer fragments |
+| **Aggressive** | 0.25s | 6s | Short cuts; lean on same-speaker merge |
+
+CLI still accepts `--vad-min-silence` / `--vad-max-speech` / etc. for one-off overrides.
+
+### Same-speaker turn merge
+
+Short VAD finals from the **same speaker** can coalesce into one “turn” before AI correct/translate (so you don’t pay one LLM call per micro-chunk). Config key `speakerTurn` in `config.json` (also editable in Settings when exposed):
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `enabled` | `true` | Master switch |
+| `maxGapSec` | `1.4` | Max gap between chunks still merged |
+| `maxTurnSec` | `24` | Force-commit open turn |
+| `idleMs` | `4000` | Quiet time after last chunk before commit + AI |
+| `maxChunks` | `3` | Max micro-segments per turn |
+
 ### Local polish (no AI)
 
 After ASR (and same-speaker turn merge), text is cleaned and passed through `replace.json` **before** optional AI correct/translate:
@@ -397,16 +463,33 @@ The host side panel shows a clickable LAN URL (`host:port`). Peers receive live 
 
 ## How transcription timing works
 
-Subtitles appear **after VAD ends a speech segment** (not word-by-word streaming):
+Subtitles appear **after VAD ends a speech segment** (not word-by-word streaming). While a segment is decoding, the TUI may show a **live** status row; only **finals** are saved/shared.
 
 | Setting | Default | Effect |
 |---------|---------|--------|
-| Silence split (`--vad-min-silence`) | **0.6s** | Quiet this long → cut & recognize |
+| Silence split (`--vad-min-silence`) | **0.6s** (Balanced) | Quiet this long → cut & recognize |
 | Max speech (`--vad-max-speech`) | **30s** | Force-cut long monologues |
 | Min speech (`--vad-min-speech`) | **0.4s** | Drop short noise bursts |
 | Speaker threshold (default) | **~0.55** | Higher → fewer speaker splits |
 
-Lower silence split (e.g. `0.35`) for snappier captions.
+For snappier meetings use preset **Meeting** or e.g. `--vad-min-silence 0.32 --vad-max-speech 9`.
+
+Deep dives: [docs/architecture.md](./docs/architecture.md) · [docs/asr-pipeline.md](./docs/asr-pipeline.md) · [docs/speakers.md](./docs/speakers.md).
+
+---
+
+## Documentation site
+
+Design docs live in [`docs/`](./docs/) and can be published with **GitHub Pages** (VitePress):
+
+```bash
+npm run docs:dev      # local preview
+npm run docs:build    # → docs/.vitepress/dist
+```
+
+After the first push of `.github/workflows/docs.yml`, enable **Settings → Pages → Source: GitHub Actions**. Site URL (project pages):
+
+`https://qinyangwang.github.io/baribari/`
 
 ---
 
@@ -420,6 +503,7 @@ npm run hooks:install   # pre-commit: typecheck + check:i18n
 npm run typecheck
 npm run check:i18n      # locale key parity (zh/ja/en)
 npm run precommit       # same gate as git pre-commit
+npm run docs:dev        # design docs (VitePress)
 npm run dev -- --demo
 npm run dev -- doctor
 npm run build
@@ -429,14 +513,22 @@ npm run build
 src/
   index.ts           CLI (commander subcommands)
   tui.ts             Fullscreen ANSI TUI
+  resume-tui.ts      Session browser / continue
   transcribe.ts      VAD + ASR loop
   speaker-tracker.ts Speaker embeddings (+ global seed)
   speaker-library.ts Global roster (roster.json)
+  speaker-turn.ts    Same-speaker turn coalesce
+  postprocess.ts     Local dict / cleanup (replace.json)
+  audio-capture.ts   Mic / loopback
+  audio-play.ts      Resume playback helpers
+  key-input.ts       Terminal key feeder (incl. CJK)
   ai.ts              Optional LLM pipeline
   share-*.ts         LAN host / join
+  session.ts         Session files + path safety
   setup.ts           First-run + downloads
   i18n/              zh · ja · en
   settings.ts        config.json
+docs/                Design docs (VitePress → GitHub Pages)
 ```
 
 ### Publish
@@ -445,8 +537,8 @@ Tags matching `package.json` version trigger GitHub Actions → npm (Trusted Pub
 
 ```bash
 # bump version in package.json
-git tag v1.4.0
-git push origin v1.4.0
+git tag v1.5.0
+git push origin v1.5.0
 ```
 
 ---

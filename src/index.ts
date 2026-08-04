@@ -481,6 +481,7 @@ async function main() {
     .description(t("cli.cmdSetup"))
     .option("-d, --download", t("cli.setupDownload"))
     .option("-y, --yes", t("cli.setupYes"))
+    .option("--manual", t("cli.setupManual"))
     .option("--skip-spk", t("cli.setupSkipSpk"))
     .option("--no-spk", t("cli.setupNoSpk"))
     .option("--models-dir <dir>", t("cli.setupModelsDir"))
@@ -489,6 +490,7 @@ async function main() {
       const ok = await runSetup({
         download: !!opts.download,
         yes: !!opts.yes,
+        manual: !!opts.manual,
         skipSpk: !!(opts.skipSpk || opts.spk === false),
         modelsDir: opts.modelsDir,
         uiLangFlag: opts.uiLang ?? readUiLangFlag(),
