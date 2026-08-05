@@ -592,6 +592,34 @@ function drawBottomBorderActions(
   putText(buf, x, by, " ─", style);
 }
 
+/** Download prompt actions: foreground, background, cancel. */
+function drawDownloadActions(buf: Cell[][], r: Rect, border: RGB): void {
+  if (r.w < 8 || r.h < 2) return;
+  const by = r.y + r.h - 1;
+  const style = { fg: border, bg: C.panelBg };
+  putChar(buf, r.x, by, "└", style);
+  putChar(buf, r.x + r.w - 1, by, "┘", style);
+  for (let x = r.x + 1; x < r.x + r.w - 1; x++) putChar(buf, x, by, "─", style);
+  const labels = [
+    { text: t("footer.downloadHere"), fg: C.ok },
+    { text: t("footer.downloadBackground"), fg: C.accent },
+    { text: t("footer.btnCancel"), fg: C.muted },
+  ];
+  const joined = labels.map((x) => x.text).join("  ");
+  let x = Math.max(r.x + 2, r.x + r.w - 2 - dw(joined));
+  for (const [i, label] of labels.entries()) {
+    if (i > 0) {
+      putText(buf, x, by, "  ", style);
+      x += 2;
+    }
+    const room = r.x + r.w - 1 - x;
+    if (room <= 0) break;
+    const shown = truncateDisplay(label.text, room);
+    putText(buf, x, by, shown, { fg: label.fg, bold: i < 2, bg: C.panelBg }, room);
+    x += dw(shown);
+  }
+}
+
 function dimBackground(buf: Cell[][]): void {
   for (const row of buf) {
     for (const cell of row) {
@@ -852,7 +880,15 @@ export function createTui(
     confirm?: boolean;
     onConfirm?: () => void;
     onCancel?: () => void;
+    onBackground?: () => void;
     blocking?: boolean;
+  } | null = null;
+  let modelDownload: {
+    engine: AsrEngine;
+    name: string;
+    percent: number;
+    stage: "downloading" | "extracting";
+    background: boolean;
   } | null = null;
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -1459,11 +1495,14 @@ export function createTui(
     kind: "error" | "warn" | "info",
     title: string,
     body: string,
-    opts?: { confirm?: boolean; blocking?: boolean; onConfirm?: () => void; onCancel?: () => void },
+    opts?: { confirm?: boolean; blocking?: boolean; onConfirm?: () => void; onCancel?: () => void; onBackground?: () => void },
   ): void {
+    // A model download owns this persistent modal until it finishes.
+    if (toast?.blocking && !opts?.blocking) return;
     clearToastTimer();
     toast = { kind, title, body, confirm: opts?.confirm,
-      onConfirm: opts?.onConfirm, onCancel: opts?.onCancel };
+      onConfirm: opts?.onConfirm, onCancel: opts?.onCancel,
+      onBackground: opts?.onBackground };
     if (toast) toast.blocking = opts?.blocking;
     // Keep continuous merge guide in status when not a confirm toast
     if (!opts?.confirm) status = "";
@@ -2009,6 +2048,42 @@ export function createTui(
     if (y <= yMax) kv(buf, x, y++, w, t("tui.mute"), t("tui.unmuted"), C.ok);
     y++;
 
+    // Current endpointing values: these directly affect final-subtitle latency.
+    if (y <= yMax) {
+      putText(buf, x, y++, t("tui.vadCut"), { fg: C.cyan, bold: true }, w);
+    }
+    const vadPreset = matchVadPreset(args.vad, args.asrEngine);
+    if (y <= yMax) {
+      kv(buf, x, y++, w, t("tui.vadPreset"),
+        t(`settings.vadPreset.${vadPreset}`), C.accent);
+    }
+    if (y <= yMax) {
+      kv(buf, x, y++, w, t("tui.vadSilence"),
+        `${args.vad.minSilenceDuration.toFixed(2)}s`, C.muted);
+    }
+    if (y <= yMax) {
+      kv(buf, x, y++, w, t("tui.vadMaxSpeech"),
+        `${args.vad.maxSpeechDuration.toFixed(0)}s`, C.muted);
+    }
+    y++;
+
+    if (modelDownload && y <= yMax) {
+      putText(buf, x, y++, t("tui.modelDownload"), { fg: C.cyan, bold: true }, w);
+      if (y <= yMax) kv(buf, x, y++, w, t("tui.downloadModel"), modelDownload.name, C.accent);
+      if (y <= yMax) {
+        kv(buf, x, y++, w, t("tui.downloadStage"),
+          modelDownload.stage === "extracting" ? t("tui.extracting") : t("tui.downloading"),
+          modelDownload.stage === "extracting" ? C.warn : C.ok);
+      }
+      if (y <= yMax) {
+        const barW = Math.max(4, Math.min(10, w - 13));
+        const filled = Math.round((modelDownload.percent / 100) * barW);
+        const progress = `${"█".repeat(filled)}${"░".repeat(barW - filled)} ${modelDownload.percent}%`;
+        kv(buf, x, y++, w, t("tui.downloadProgress"), progress, C.ok);
+      }
+      y++;
+    }
+
     // 7.2 录音设置
     if (y <= yMax) {
       putText(buf, x, y++, t("tui.recSettings"), { fg: C.cyan, bold: true }, w);
@@ -2131,14 +2206,13 @@ export function createTui(
 
   /**
  * Ordinary notice → top-right, auto 3s dismiss.
- * Merge confirm → same centered dialog as session rename;
- * Save/Cancel embedded on the bottom border line.
+ * Confirm and blocking progress → centered persistent dialog.
  */
   function renderToastModal(buf: Cell[][], layout: Layout): void {
     if (!toast) return;
     const W = layout.statusBar.w || cols();
     const H = (layout.footer.y || rows() - 1) + 1;
-    const centered = Boolean(toast.confirm);
+    const centered = Boolean(toast.confirm || toast.blocking);
     const boxW = centered
       ? Math.min(56, Math.max(40, Math.floor(W * 0.5)))
       : Math.min(42, Math.max(28, Math.floor(W * 0.32)));
@@ -2166,7 +2240,8 @@ export function createTui(
     if (centered) {
       // Same chrome as session-name edit
       drawBox(buf, r, toast.title, C.accent, C.accent);
-      drawBottomBorderActions(buf, r, C.accent);
+      if (toast.onBackground) drawDownloadActions(buf, r, C.accent);
+      else if (toast.confirm) drawBottomBorderActions(buf, r, C.accent);
       let y = r.y + 2;
       for (const wl of shown) {
         if (y >= r.y + r.h - 1) break;
@@ -2502,9 +2577,9 @@ export function createTui(
       renderRenameModal(next, layout);
     }
 
-    // Confirm (merge save) → center + dim; ordinary tips → top-right, no dim
+    // Confirm/progress → center + dim; ordinary tips → top-right, no dim
     if (toast) {
-      if (toast.confirm) dimBackground(next);
+      if (toast.confirm || toast.blocking) dimBackground(next);
       renderToastModal(next, layout);
     }
 
@@ -2905,6 +2980,10 @@ export function createTui(
 
   function requestAsrEngine(engine: AsrEngine): void {
     if (engine === args.asrEngine) return;
+    if (modelDownload) {
+      notify(t("settings.asrEngine.downloadRunning", { name: modelDownload.name }));
+      return;
+    }
     const ready = checkModels(modelOverridesFromSettings(), {
       requireSpk: false,
       asrEngine: engine,
@@ -2921,26 +3000,72 @@ export function createTui(
       }), {
         confirm: true,
         onCancel: () => {},
-        onConfirm: () => {
-          showToast("info", t("settings.asrEngine.downloading", { name }), "0%", { blocking: true });
-          void downloadAsrModel(engine, {
-            onProgress: (percent) => {
-              if (toast) toast.body = `${percent}%`;
-              dirty = true;
-            },
-            onExtract: () => {
-              if (toast) toast.body = t("settings.asrEngine.extracting");
-              dirty = true;
-            },
-          }).then(() => {
-            toast = null;
-            applyAsrEngine(engine);
-          }).catch((error) => {
-            toast = null;
-            showToast("error", t("settings.asrEngine.downloadFailed", { name }), String(error));
-          });
-        },
+        onConfirm: () => startModelDownload(engine, name, false),
+        onBackground: () => startModelDownload(engine, name, true),
       });
+  }
+
+  function startModelDownload(
+    engine: AsrEngine,
+    name: string,
+    background: boolean,
+  ): void {
+    modelDownload = {
+      engine,
+      name,
+      percent: 0,
+      stage: "downloading",
+      background,
+    };
+    const progressText = (percent: number) => {
+      const width = 24;
+      const value = Math.max(0, Math.min(100, percent));
+      const filled = Math.round((value / 100) * width);
+      return `${"█".repeat(filled)}${"░".repeat(width - filled)}  ${value}%`;
+    };
+    if (background) {
+      toast = null;
+      mode = "normal";
+      focusPanel = "transcript";
+      status = t("settings.asrEngine.backgroundStarted", { name });
+    } else {
+      showToast(
+        "info",
+        t("settings.asrEngine.downloading", { name }),
+        progressText(0),
+        { blocking: true },
+      );
+    }
+    dirty = true;
+    paint({ urgent: true });
+
+    void downloadAsrModel(engine, {
+      onProgress: (percent) => {
+        if (!modelDownload || modelDownload.engine !== engine) return;
+        modelDownload.percent = Math.max(0, Math.min(100, percent));
+        if (!modelDownload.background && toast?.blocking) {
+          toast.body = progressText(modelDownload.percent);
+        }
+        dirty = true;
+      },
+      onExtract: () => {
+        if (!modelDownload || modelDownload.engine !== engine) return;
+        modelDownload.percent = 100;
+        modelDownload.stage = "extracting";
+        if (!modelDownload.background && toast?.blocking) {
+          toast.body = t("settings.asrEngine.extracting");
+        }
+        dirty = true;
+      },
+    }).then(() => {
+      modelDownload = null;
+      toast = null;
+      applyAsrEngine(engine);
+    }).catch((error) => {
+      modelDownload = null;
+      toast = null;
+      showToast("error", t("settings.asrEngine.downloadFailed", { name }), String(error));
+    });
   }
 
   function toggleOrEditSetting(): void {
@@ -3304,13 +3429,20 @@ export function createTui(
   function onKey(key: string): void {
     if (closed) return;
 
-    // Toast: confirm (y/n) or any-key dismiss; Ctrl+C still quits
+    // Toast: confirm (y), background (b), cancel (n), or any-key dismiss; Ctrl+C still quits
     if (toast) {
       if (key === "\x03" || key === "\x04") {
         opts.onQuit();
         return;
       }
       if (toast.confirm) {
+        if ((key === "b" || key === "B") && toast.onBackground) {
+          const action = toast.onBackground;
+          toast = null;
+          action();
+          dirty = true;
+          return;
+        }
         if (key === "y" || key === "Y" || key === "\r" || key === "\n") {
           const action = toast.onConfirm;
           toast = null;
@@ -3327,7 +3459,7 @@ export function createTui(
           dirty = true;
           return;
         }
-        return; // wait for y/n
+        return; // wait for y/b/n
       }
       if (toast.blocking) return;
       dismissToast();

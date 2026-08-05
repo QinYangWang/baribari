@@ -25,13 +25,20 @@ With SenseVoice, a partial event is usually a **status** such as “Recognizing�
 
 Under **Settings → Speech ASR → ASR model**, switch between SenseVoice and
 Fun-ASR-Nano with `←` / `→`. When Fun-ASR-Nano is missing, the TUI asks before
-downloading it and keeps the current model active until installation succeeds.
+downloading it. Choose a foreground download or continue transcribing while it
+downloads in the background. Wide layouts show its stage and progress in the
+right details panel, which also summarizes the active VAD endpoint settings.
+The current model stays active until installation succeeds.
 
 ## Key cheatsheet (live)
 
 See README for the full table. Highlights: `p`/`Space` pause, `s` settings, `h` share, `r` record, `c` clear screen, `Tab` focus, `1–9` assign, `m` merge, `e` rename session, wheel/`g` scroll, `q` quit.
 
-Settings groups are scrollable; many values use `←` `→`. Notice toasts auto-dismiss (~3s).
+Settings groups are scrollable; many values use `←` `→`. Ordinary notice toasts auto-dismiss (~3s); download progress remains visible until it completes or fails.
+
+Running `baribari setup` interactively also asks which recognition models to
+install: SenseVoice (recommended), Fun-ASR-Nano, or both. `--yes` keeps the
+configured model and skips this prompt for unattended setup.
 
 ## UI language vs ASR language
 

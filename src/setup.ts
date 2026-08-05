@@ -11,6 +11,7 @@ import {
   checkModels,
   configDir,
   ensureConfigDir,
+  funAsrNanoRequiredFiles,
   modelPaths,
   type ModelPathOverrides,
 } from "./paths.js";
@@ -28,6 +29,7 @@ import {
   uiLangLabel,
   type UiLang,
 } from "./i18n/index.js";
+import type { AsrEngine } from "./types.js";
 
 const DIM = "\x1b[2m";
 const BOLD = "\x1b[1m";
@@ -56,6 +58,10 @@ function printManualGuide(modelsDir: string): void {
   println(`   ${t("setup.asrContains")}`);
   println(`   ${MODEL_DOWNLOADS.senseVoice.url}`);
   println();
+  println(`${BOLD}${t("setup.funAsrNano")}${RESET}  ${DIM}${MODEL_DOWNLOADS.funAsrNano.approx}${RESET}`);
+  println(`   ${t("setup.funAsrNanoExtract", { dir: MODEL_DOWNLOADS.funAsrNano.extractDir })}`);
+  println(`   ${MODEL_DOWNLOADS.funAsrNano.url}`);
+  println();
   println(`${BOLD}${t("setup.spkOptional")}${RESET}  ${DIM}${MODEL_DOWNLOADS.spk.approx}${RESET}`);
   println(`   ${t("setup.file")} ${MODEL_DOWNLOADS.spk.dest}`);
   println(`   ${MODEL_DOWNLOADS.spk.url}`);
@@ -70,6 +76,7 @@ function printManualGuide(modelsDir: string): void {
   "models": {
     "vad": "D:/models/silero_vad.onnx",
     "senseVoiceDir": "D:/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17",
+    "funAsrNanoDir": "D:/models/${MODEL_DOWNLOADS.funAsrNano.extractDir}",
     "spk": "D:/models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx"
   }
 }${RESET}`);
@@ -146,21 +153,22 @@ function extractTarBz2(archive: string, modelsDir: string): void {
 export async function downloadFunAsrNano(opts?: {
   onProgress?: (percent: number) => void;
   onExtract?: () => void;
+  quiet?: boolean;
 }): Promise<void> {
   ensureConfigDir();
   const paths = modelPaths(modelOverridesFromSettings());
-  if (fs.existsSync(paths.funAsrNanoEncoderAdaptor) &&
-      fs.existsSync(paths.funAsrNanoLlm) &&
-      fs.existsSync(paths.funAsrNanoEmbedding) &&
-      fs.existsSync(paths.funAsrNanoTokenizer)) return;
+  if (funAsrNanoRequiredFiles(paths).every((item) => fs.existsSync(item.path))) return;
   fs.mkdirSync(paths.modelsDir, { recursive: true });
   const archive = path.join(paths.modelsDir, MODEL_DOWNLOADS.funAsrNano.dest);
   if (!fs.existsSync(archive)) {
     await downloadFile(MODEL_DOWNLOADS.funAsrNano.url, archive,
       MODEL_DOWNLOADS.funAsrNano.name,
-      { quiet: true, onProgress: opts?.onProgress });
+      { quiet: opts?.quiet !== false, onProgress: opts?.onProgress });
   }
   opts?.onExtract?.();
+  if (opts?.quiet === false) {
+    println(`${ACC}⋯${RESET} ${t("setup.extract", { name: path.basename(archive) })}`);
+  }
   await new Promise<void>((resolve, reject) => {
     const child = spawn("tar", ["-xjf", archive, "-C", paths.modelsDir], {
       shell: false, stdio: ["ignore", "ignore", "pipe"],
@@ -173,6 +181,9 @@ export async function downloadFunAsrNano(opts?: {
       else reject(new Error(stderr.trim() || `tar exited with code ${code}`));
     });
   });
+  if (opts?.quiet === false) {
+    println(`  ${OK}✓${RESET} ${t("setup.extractOk", { dir: paths.modelsDir })}`);
+  }
   const check = checkModels(modelOverridesFromSettings(), {
     requireSpk: false, asrEngine: "funasr-nano",
   });
@@ -215,7 +226,8 @@ export async function downloadAsrModel(
 
 export async function downloadModels(opts?: {
   skipSpk?: boolean;
-  asrEngine?: import("./types.js").AsrEngine;
+  asrEngine?: AsrEngine;
+  asrEngines?: AsrEngine[];
 }): Promise<void> {
   ensureConfigDir();
   const paths = modelPaths(modelOverridesFromSettings());
@@ -229,26 +241,26 @@ export async function downloadModels(opts?: {
       path.join(modelsDir, MODEL_DOWNLOADS.vad.dest),
       MODEL_DOWNLOADS.vad.name,
     );
-  } else {
-    println(`${OK}✓${RESET} ${t("setup.vadExists")}`);
   }
 
-  // Selected ASR model
-  if (opts?.asrEngine === "funasr-nano") {
-    await downloadFunAsrNano();
-  } else if (!fs.existsSync(paths.senseVoiceModel)) {
-    const arch = path.join(modelsDir, MODEL_DOWNLOADS.senseVoice.dest);
-    if (!fs.existsSync(arch)) {
-      await downloadFile(
-        MODEL_DOWNLOADS.senseVoice.url,
-        arch,
-        MODEL_DOWNLOADS.senseVoice.name,
-      );
+  // Selected ASR model(s)
+  const engines = opts?.asrEngines ?? [opts?.asrEngine ?? "sensevoice"];
+  for (const engine of engines) {
+    if (engine === "funasr-nano") {
+      const ready = funAsrNanoRequiredFiles(paths).every((item) => fs.existsSync(item.path));
+      if (!ready) await downloadFunAsrNano({ quiet: false });
+    } else if (!fs.existsSync(paths.senseVoiceModel) || !fs.existsSync(paths.senseVoiceTokens)) {
+      const arch = path.join(modelsDir, MODEL_DOWNLOADS.senseVoice.dest);
+      if (!fs.existsSync(arch)) {
+        await downloadFile(
+          MODEL_DOWNLOADS.senseVoice.url,
+          arch,
+          MODEL_DOWNLOADS.senseVoice.name,
+        );
+      }
+      extractTarBz2(arch, modelsDir);
+      // optional: keep archive
     }
-    extractTarBz2(arch, modelsDir);
-    // optional: keep archive
-  } else {
-    println(`${OK}✓${RESET} ${t("setup.asrExists")}`);
   }
 
   // Speaker
@@ -259,8 +271,6 @@ export async function downloadModels(opts?: {
         path.join(modelsDir, MODEL_DOWNLOADS.spk.dest),
         MODEL_DOWNLOADS.spk.name,
       );
-    } else {
-      println(`${OK}✓${RESET} ${t("setup.spkExists")}`);
     }
   }
 
@@ -272,6 +282,49 @@ function ask(rl: readline.Interface, q: string): Promise<string> {
   return new Promise((resolve) => rl.question(q, resolve));
 }
 
+type SetupModelChoice = AsrEngine | "both";
+
+async function chooseSetupModels(defaultEngine: AsrEngine): Promise<SetupModelChoice> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  const defaultChoice = defaultEngine === "funasr-nano" ? 2 : 1;
+  try {
+    println(`${BOLD}${t("setup.chooseModels")}${RESET}`);
+    println(`  1) ${t("setup.senseVoiceOption")}`);
+    println(`  2) ${t("setup.funAsrNanoOption")}`);
+    println(`  3) ${t("setup.bothOption")}`);
+    println();
+    const answer = (await ask(rl, t("setup.selectModels", { n: defaultChoice })))
+      .trim()
+      .toLowerCase();
+    if (answer === "2" || answer === "funasr" || answer === "funasr-nano" || answer === "nano") {
+      return "funasr-nano";
+    }
+    if (answer === "3" || answer === "both" || answer === "all") return "both";
+    if (answer === "1" || answer === "sensevoice" || answer === "sense" || answer === "") {
+      return answer === "" ? defaultEngine : "sensevoice";
+    }
+    return defaultEngine;
+  } finally {
+    rl.close();
+  }
+}
+
+function selectedModelCheck(
+  overrides: ModelPathOverrides,
+  engines: AsrEngine[],
+  requireSpk: boolean,
+) {
+  const checks = engines.map((asrEngine) => checkModels(overrides, { requireSpk, asrEngine }));
+  const primary = checks[0]!;
+  const missing = [...new Map(
+    checks.flatMap((check) => check.missing).map((item) => [item.path, item]),
+  ).values()];
+  return {
+    ok: checks.every((check) => check.ok),
+    paths: primary.paths,
+    missing,
+  };
+}
 
 /**
  * First-run UI language picker (before other setup text).
@@ -361,7 +414,7 @@ export async function runSetup(opts?: {
   modelsDir?: string;
   uiLangFlag?: string;
   skipLangPrompt?: boolean;
-  asrEngine?: import("./types.js").AsrEngine;
+  asrEngine?: AsrEngine;
 }): Promise<boolean> {
   ensureConfigDir();
 
@@ -382,11 +435,25 @@ export async function runSetup(opts?: {
     println(`${OK}✓${RESET} ${t("setup.modelsDirSet", { dir: abs })}`);
   }
 
+  const saved = loadSettings();
+  const configuredEngine = opts?.asrEngine ?? saved.asrEngine ?? "sensevoice";
+  let engines: AsrEngine[] = [configuredEngine];
+  let selectedActiveEngine = configuredEngine;
+  if (!opts?.asrEngine && !opts?.yes && !opts?.manual && process.stdin.isTTY) {
+    const choice = await chooseSetupModels(configuredEngine);
+    engines = choice === "both" ? ["sensevoice", "funasr-nano"] : [choice];
+    selectedActiveEngine = choice === "both" ? configuredEngine : choice;
+    println();
+  }
+
+  const saveSelectedEngine = () => {
+    if (!opts?.asrEngine && saved.asrEngine !== selectedActiveEngine) {
+      saveSettings({ asrEngine: selectedActiveEngine });
+    }
+  };
+
   const overrides: ModelPathOverrides = modelOverridesFromSettings();
-  const engine = opts?.asrEngine ?? loadSettings().asrEngine ?? "sensevoice";
-  const check = checkModels(overrides, {
-    requireSpk: !opts?.skipSpk, asrEngine: engine,
-  });
+  const check = selectedModelCheck(overrides, engines, !opts?.skipSpk);
 
   println(`${BOLD}${ACC}${t("setup.setupHeader")}${RESET}`);
   println(`${DIM}config: ${configDir()}${RESET}`);
@@ -394,10 +461,16 @@ export async function runSetup(opts?: {
   println();
 
   if (check.ok) {
+    saveSelectedEngine();
     println(`${OK}${t("setup.allReady")}${RESET}`);
     println(`  vad:  ${check.paths.vad}`);
-    println(`  asr:  ${check.paths.senseVoiceModel}`);
-    println(`  spk:  ${check.paths.spk}`);
+    for (const engine of engines) {
+      const modelPath = engine === "funasr-nano"
+        ? check.paths.funAsrNanoDir
+        : check.paths.senseVoiceModel;
+      println(`  asr (${engine}):  ${modelPath}`);
+    }
+    if (!opts?.skipSpk) println(`  spk:  ${check.paths.spk}`);
     return true;
   }
 
@@ -431,16 +504,15 @@ export async function runSetup(opts?: {
 
   if (doDownload) {
     try {
-      await downloadModels({ skipSpk: opts?.skipSpk, asrEngine: engine });
+      await downloadModels({ skipSpk: opts?.skipSpk, asrEngines: engines });
     } catch (e) {
       println(`${WARN}${t("setup.autoFail", { err: e instanceof Error ? e.message : String(e) })}${RESET}`);
       println(t("setup.manualHint"));
       return false;
     }
-    const again = checkModels(overrides, {
-      requireSpk: !opts?.skipSpk, asrEngine: engine,
-    });
+    const again = selectedModelCheck(overrides, engines, !opts?.skipSpk);
     if (again.ok) {
+      saveSelectedEngine();
       println(`${OK}${t("setup.canStart")}${RESET}`);
       return true;
     }

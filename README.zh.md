@@ -102,7 +102,7 @@ npm link
 ## 快速开始
 
 ```bash
-# 首次使用：选择界面语言并下载模型
+# 首次使用：选择界面语言和识别模型，然后下载
 baribari setup --download
 
 # 开始实时转写
@@ -111,6 +111,9 @@ baribari
 # 如遇问题，检查运行环境
 baribari doctor
 ```
+
+安装时可选择 SenseVoice、Fun-ASR-Nano，或同时安装两个模型。SenseVoice 是推荐
+的默认选项；只选择一个模型时，它也会成为当前使用的识别模型。
 
 ---
 
@@ -259,7 +262,8 @@ eval "$(baribari completion bash)"
 
 SenseVoice 是默认模型。在 **设置 → 语音识别 → 识别模型** 中按 `←` / `→`
 即可切换到 Fun-ASR-Nano。如果本地尚未安装，baribari 会先询问是否下载
-（解压后约 1 GB），下载成功后才会切换。也可使用
+（解压后约 1 GB）。你可以留在下载界面等待，也可以转入后台并继续实时转写；宽屏
+布局会在右侧详情栏持续显示下载阶段和进度。下载成功后才会切换模型。也可使用
 `baribari --asr-engine funasr-nano` 直接启动。
 
 ```bash

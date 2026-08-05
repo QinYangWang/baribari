@@ -104,12 +104,15 @@ npm link
 ## Quick start
 
 ```bash
-# 1) First run: pick UI language + download models
+# 1) First run: pick UI language and ASR model, then download
 baribari setup --download
 
 # 2) Start live transcription (fullscreen TUI)
 baribari
 ```
+
+Setup lets you install SenseVoice, Fun-ASR-Nano, or both. SenseVoice is the
+recommended default; choosing one model also makes it the active ASR engine.
 
 Enable only the optional features you need:
 
@@ -378,8 +381,10 @@ The version check runs once in the background at startup and silently ignores ne
 
 SenseVoice is the default. Open **Settings → Speech ASR → ASR model** and use
 `←` / `→` to switch to Fun-ASR-Nano. If its files are not installed, baribari
-asks before downloading them (about 1 GB extracted) and switches only after the
-download succeeds. You can also start directly with
+asks before downloading them (about 1 GB extracted). You can wait for it or keep
+transcribing while it downloads in the background; wide layouts keep the stage
+and progress visible in the right details panel. The model switches only after
+the download succeeds. You can also start directly with
 `baribari --asr-engine funasr-nano`.
 
 | Component | Role | Auto-download |

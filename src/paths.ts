@@ -187,6 +187,34 @@ export interface ModelCheckResult {
   missing: { key: string; path: string; required: boolean }[];
 }
 
+/** Files required inside a complete Fun-ASR-Nano bundle. */
+export function funAsrNanoRequiredFiles(paths: ResolvedModelPaths): Array<{
+  key: string;
+  path: string;
+  required: true;
+}> {
+  return [
+    { key: "funAsrNanoEncoderAdaptor", path: paths.funAsrNanoEncoderAdaptor, required: true },
+    { key: "funAsrNanoLlm", path: paths.funAsrNanoLlm, required: true },
+    { key: "funAsrNanoEmbedding", path: paths.funAsrNanoEmbedding, required: true },
+    {
+      key: "funAsrNanoTokenizerMerges",
+      path: path.join(paths.funAsrNanoTokenizer, "merges.txt"),
+      required: true,
+    },
+    {
+      key: "funAsrNanoTokenizerJson",
+      path: path.join(paths.funAsrNanoTokenizer, "tokenizer.json"),
+      required: true,
+    },
+    {
+      key: "funAsrNanoTokenizerVocab",
+      path: path.join(paths.funAsrNanoTokenizer, "vocab.json"),
+      required: true,
+    },
+  ];
+}
+
 export function checkModels(
   overrides: ModelPathOverrides = {},
   opts?: { requireSpk?: boolean; asrEngine?: AsrEngine },
@@ -196,12 +224,7 @@ export function checkModels(
   const missing: ModelCheckResult["missing"] = [];
   const asrEngine = opts?.asrEngine ?? "sensevoice";
   const asr = asrEngine === "funasr-nano"
-    ? [
-        { key: "funAsrNanoEncoderAdaptor", path: paths.funAsrNanoEncoderAdaptor, required: true },
-        { key: "funAsrNanoLlm", path: paths.funAsrNanoLlm, required: true },
-        { key: "funAsrNanoEmbedding", path: paths.funAsrNanoEmbedding, required: true },
-        { key: "funAsrNanoTokenizer", path: paths.funAsrNanoTokenizer, required: true },
-      ]
+    ? funAsrNanoRequiredFiles(paths)
     : [
         { key: "senseVoiceModel", path: paths.senseVoiceModel, required: true },
         { key: "senseVoiceTokens", path: paths.senseVoiceTokens, required: true },
@@ -224,7 +247,7 @@ export function assertModelsExist(
   const requireSpk = opts?.requireSpk !== false;
   const missing: string[] = [];
   const asr = opts?.asrEngine === "funasr-nano"
-    ? [paths.funAsrNanoEncoderAdaptor, paths.funAsrNanoLlm, paths.funAsrNanoEmbedding, paths.funAsrNanoTokenizer]
+    ? funAsrNanoRequiredFiles(paths).map((item) => item.path)
     : [paths.senseVoiceModel, paths.senseVoiceTokens];
   for (const p of [paths.vad, ...asr]) {
     if (!fs.existsSync(p)) missing.push(p);

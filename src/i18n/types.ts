@@ -152,6 +152,16 @@ export type MessageTree = {
     volume: string;
     mute: string;
     unmuted: string;
+    vadCut: string;
+    vadPreset: string;
+    vadSilence: string;
+    vadMaxSpeech: string;
+    modelDownload: string;
+    downloadModel: string;
+    downloadStage: string;
+    downloadProgress: string;
+    downloading: string;
+    extracting: string;
     recSettings: string;
     recState: string;
     recording: string;
@@ -203,6 +213,8 @@ export type MessageTree = {
     btnSave: string;
     /** Embedded on dialog bottom border: Cancel(N/Esc) */
     btnCancel: string;
+    downloadHere: string;
+    downloadBackground: string;
   };
   settings: {
     groups: {
@@ -247,6 +259,8 @@ export type MessageTree = {
       downloading: string;
       extracting: string;
       downloadFailed: string;
+      downloadRunning: string;
+      backgroundStarted: string;
     };
     /** VAD preset labels (←→ in settings). */
     vadPreset: {
@@ -362,6 +376,8 @@ export type MessageTree = {
     asr: string;
     asrExtract: string;
     asrContains: string;
+    funAsrNano: string;
+    funAsrNanoExtract: string;
     spkOptional: string;
     pages: string;
     asrVad: string;
@@ -375,12 +391,18 @@ export type MessageTree = {
     extractFail: string;
     vadExists: string;
     asrExists: string;
+    funAsrNanoExists: string;
     spkExists: string;
     downloadDone: string;
     modelsDirSet: string;
     setupHeader: string;
     allReady: string;
     missingCount: string;
+    chooseModels: string;
+    senseVoiceOption: string;
+    funAsrNanoOption: string;
+    bothOption: string;
+    selectModels: string;
     promptDownload: string;
     autoFail: string;
     manualHint: string;
