@@ -2,7 +2,8 @@
  * First-run setup: ensure ~/.config/baribari, guide model download.
  */
 
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
@@ -83,11 +84,17 @@ function printManualGuide(modelsDir: string): void {
   println();
 }
 
-async function downloadFile(
+type DownloadFileOptions = {
+  quiet?: boolean;
+  onProgress?: (percent: number) => void;
+  onRetry?: () => void;
+};
+
+async function downloadFileOnce(
   url: string,
   dest: string,
   label: string,
-  opts?: { quiet?: boolean; onProgress?: (percent: number) => void },
+  opts?: DownloadFileOptions,
 ): Promise<void> {
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   const tmp = dest + ".partial";
@@ -102,113 +109,74 @@ async function downloadFile(
   const reader = res.body.getReader();
   let got = 0;
   let lastPct = -1;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (value) {
-      file.write(Buffer.from(value));
-      got += value.length;
-      if (total > 0) {
-        const pct = Math.floor((got / total) * 100);
-        opts?.onProgress?.(pct);
-        if (!opts?.quiet && pct !== lastPct && pct % 5 === 0) {
-          process.stdout.write(
-            `\r  ${pct}%  ${(got / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)} MB`,
-          );
-          lastPct = pct;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        if (!file.write(Buffer.from(value))) await once(file, "drain");
+        got += value.length;
+        if (total > 0) {
+          const pct = Math.floor((got / total) * 100);
+          opts?.onProgress?.(pct);
+          if (!opts?.quiet && pct !== lastPct && pct % 5 === 0) {
+            process.stdout.write(
+              `\r  ${pct}%  ${(got / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)} MB`,
+            );
+            lastPct = pct;
+          }
+        } else if (!opts?.quiet && got % (5 * 1048576) < value.length) {
+          process.stdout.write(`\r  ${(got / 1048576).toFixed(1)} MB`);
         }
-      } else if (!opts?.quiet && got % (5 * 1048576) < value.length) {
-        process.stdout.write(`\r  ${(got / 1048576).toFixed(1)} MB`);
       }
     }
-  }
-  await new Promise<void>((resolve, reject) => {
-    file.end(() => resolve());
-    file.on("error", reject);
-  });
-  if (!opts?.quiet) process.stdout.write("\n");
-  fs.renameSync(tmp, dest);
-  if (!opts?.quiet) println(`  ${OK}✓${RESET} ${dest}`);
-}
-
-function extractTarBz2(archive: string, modelsDir: string): void {
-  println(`${ACC}⋯${RESET} ${t("setup.extract", { name: path.basename(archive) })}`);
-  // Windows 10+ tar, Linux/mac tar
-  const r = spawnSync(
-    "tar",
-    ["-xjf", archive, "-C", modelsDir],
-    { encoding: "utf8", shell: false },
-  );
-  if (r.status !== 0) {
-    const err = (r.stderr || r.stdout || "").trim();
-    throw new Error(
-      t("setup.extractFail", { dir: modelsDir, err }),
-    );
-  }
-  println(`  ${OK}✓${RESET} ${t("setup.extractOk", { dir: modelsDir })}`);
-}
-
-/** Download the optional Fun-ASR-Nano bundle without writing into a live TUI. */
-export async function downloadFunAsrNano(opts?: {
-  onProgress?: (percent: number) => void;
-  onExtract?: () => void;
-  quiet?: boolean;
-}): Promise<void> {
-  ensureConfigDir();
-  const paths = modelPaths(modelOverridesFromSettings());
-  if (funAsrNanoRequiredFiles(paths).every((item) => fs.existsSync(item.path))) return;
-  fs.mkdirSync(paths.modelsDir, { recursive: true });
-  const archive = path.join(paths.modelsDir, MODEL_DOWNLOADS.funAsrNano.dest);
-  if (!fs.existsSync(archive)) {
-    await downloadFile(MODEL_DOWNLOADS.funAsrNano.url, archive,
-      MODEL_DOWNLOADS.funAsrNano.name,
-      { quiet: opts?.quiet !== false, onProgress: opts?.onProgress });
-  }
-  opts?.onExtract?.();
-  if (opts?.quiet === false) {
-    println(`${ACC}⋯${RESET} ${t("setup.extract", { name: path.basename(archive) })}`);
-  }
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn("tar", ["-xjf", archive, "-C", paths.modelsDir], {
-      shell: false, stdio: ["ignore", "ignore", "pipe"],
+    if (total > 0 && got !== total) {
+      throw new Error(t("setup.downloadIncomplete", {
+        name: label,
+        received: (got / 1048576).toFixed(1),
+        expected: (total / 1048576).toFixed(1),
+      }));
+    }
+    await new Promise<void>((resolve, reject) => {
+      file.end(() => resolve());
+      file.on("error", reject);
     });
-    let stderr = "";
-    child.stderr?.on("data", (chunk) => { stderr += String(chunk); });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) resolve();
-      else reject(new Error(stderr.trim() || `tar exited with code ${code}`));
-    });
-  });
-  if (opts?.quiet === false) {
-    println(`  ${OK}✓${RESET} ${t("setup.extractOk", { dir: paths.modelsDir })}`);
+    if (!opts?.quiet) process.stdout.write("\n");
+    fs.renameSync(tmp, dest);
+    if (!opts?.quiet) println(`  ${OK}✓${RESET} ${dest}`);
+  } catch (error) {
+    void reader.cancel().catch(() => {});
+    file.destroy();
+    if (!file.closed) await once(file, "close").catch(() => {});
+    fs.rmSync(tmp, { force: true });
+    throw error;
   }
-  const check = checkModels(modelOverridesFromSettings(), {
-    requireSpk: false, asrEngine: "funasr-nano",
-  });
-  if (!check.ok) throw new Error(check.missing.map((m) => m.path).join(", "));
 }
 
-/** Download one ASR backend for use by the live settings dialog. */
-export async function downloadAsrModel(
-  engine: import("./types.js").AsrEngine,
-  opts?: { onProgress?: (percent: number) => void; onExtract?: () => void },
+async function downloadFile(
+  url: string,
+  dest: string,
+  label: string,
+  opts?: DownloadFileOptions,
 ): Promise<void> {
-  if (engine === "funasr-nano") return downloadFunAsrNano(opts);
-  ensureConfigDir();
-  const paths = modelPaths(modelOverridesFromSettings());
-  if (fs.existsSync(paths.senseVoiceModel) && fs.existsSync(paths.senseVoiceTokens)) return;
-  fs.mkdirSync(paths.modelsDir, { recursive: true });
-  const archive = path.join(paths.modelsDir, MODEL_DOWNLOADS.senseVoice.dest);
-  if (!fs.existsSync(archive)) {
-    await downloadFile(MODEL_DOWNLOADS.senseVoice.url, archive,
-      MODEL_DOWNLOADS.senseVoice.name,
-      { quiet: true, onProgress: opts?.onProgress });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await downloadFileOnce(url, dest, label, opts);
+      return;
+    } catch (error) {
+      if (attempt === 0) {
+        opts?.onRetry?.();
+        if (!opts?.quiet) println(`${WARN}${t("setup.downloadRetry", { name: label })}${RESET}`);
+        continue;
+      }
+      throw error;
+    }
   }
-  opts?.onExtract?.();
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn("tar", ["-xjf", archive, "-C", paths.modelsDir], {
+}
+
+function extractTarBz2(archive: string, modelsDir: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("tar", ["-xjf", archive, "-C", modelsDir], {
       shell: false, stdio: ["ignore", "ignore", "pipe"],
     });
     let stderr = "";
@@ -218,10 +186,116 @@ export async function downloadAsrModel(
       ? resolve()
       : reject(new Error(stderr.trim() || `tar exited with code ${code}`)));
   });
-  const check = checkModels(modelOverridesFromSettings(), {
-    requireSpk: false, asrEngine: "sensevoice",
+}
+
+function looksLikeDamagedArchive(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /truncated|unexpected (?:end|eof)|short read|corrupt|invalid.*archive|not.*archive/i
+    .test(message);
+}
+
+async function downloadAndExtract(options: {
+  url: string;
+  archive: string;
+  label: string;
+  modelsDir: string;
+  quiet: boolean;
+  onProgress?: (percent: number) => void;
+  onExtract?: () => void;
+  onRetry?: () => void;
+}): Promise<void> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (!fs.existsSync(options.archive)) {
+      await downloadFile(options.url, options.archive, options.label, {
+        quiet: options.quiet,
+        onProgress: options.onProgress,
+        onRetry: options.onRetry,
+      });
+    }
+    options.onExtract?.();
+    if (!options.quiet) {
+      println(`${ACC}⋯${RESET} ${t("setup.extract", { name: path.basename(options.archive) })}`);
+    }
+    try {
+      await extractTarBz2(options.archive, options.modelsDir);
+      if (!options.quiet) {
+        println(`  ${OK}✓${RESET} ${t("setup.extractOk", { dir: options.modelsDir })}`);
+      }
+      return;
+    } catch (error) {
+      if (looksLikeDamagedArchive(error)) {
+        fs.rmSync(options.archive, { force: true });
+        if (attempt === 0) {
+          options.onRetry?.();
+          if (!options.quiet) {
+            println(`${WARN}${t("setup.archiveCorruptRetry", { name: path.basename(options.archive) })}${RESET}`);
+          }
+          continue;
+        }
+      }
+      const err = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        t("setup.extractFail", { dir: options.modelsDir, err }),
+      );
+    }
+  }
+}
+
+/** Download the optional Fun-ASR-Nano bundle without writing into a live TUI. */
+export async function downloadFunAsrNano(opts?: {
+  onProgress?: (percent: number) => void;
+  onExtract?: () => void;
+  onRetry?: () => void;
+  quiet?: boolean;
+}): Promise<void> {
+  ensureConfigDir();
+  const paths = modelPaths(modelOverridesFromSettings());
+  if (funAsrNanoRequiredFiles(paths).every((item) => fs.existsSync(item.path))) return;
+  fs.mkdirSync(paths.modelsDir, { recursive: true });
+  const archive = path.join(paths.modelsDir, MODEL_DOWNLOADS.funAsrNano.dest);
+  await downloadAndExtract({
+    url: MODEL_DOWNLOADS.funAsrNano.url,
+    archive,
+    label: MODEL_DOWNLOADS.funAsrNano.name,
+    modelsDir: paths.modelsDir,
+    quiet: opts?.quiet !== false,
+    onProgress: opts?.onProgress,
+    onExtract: opts?.onExtract,
+    onRetry: opts?.onRetry,
   });
-  if (!check.ok) throw new Error(check.missing.map((m) => m.path).join(", "));
+  const missing = funAsrNanoRequiredFiles(paths)
+    .filter((item) => !fs.existsSync(item.path));
+  if (missing.length) throw new Error(missing.map((item) => item.path).join(", "));
+}
+
+/** Download one ASR backend for use by the live settings dialog. */
+export async function downloadAsrModel(
+  engine: import("./types.js").AsrEngine,
+  opts?: {
+    onProgress?: (percent: number) => void;
+    onExtract?: () => void;
+    onRetry?: () => void;
+  },
+): Promise<void> {
+  if (engine === "funasr-nano") return downloadFunAsrNano(opts);
+  ensureConfigDir();
+  const paths = modelPaths(modelOverridesFromSettings());
+  if (fs.existsSync(paths.senseVoiceModel) && fs.existsSync(paths.senseVoiceTokens)) return;
+  fs.mkdirSync(paths.modelsDir, { recursive: true });
+  const archive = path.join(paths.modelsDir, MODEL_DOWNLOADS.senseVoice.dest);
+  await downloadAndExtract({
+    url: MODEL_DOWNLOADS.senseVoice.url,
+    archive,
+    label: MODEL_DOWNLOADS.senseVoice.name,
+    modelsDir: paths.modelsDir,
+    quiet: true,
+    onProgress: opts?.onProgress,
+    onExtract: opts?.onExtract,
+    onRetry: opts?.onRetry,
+  });
+  const missing = [paths.senseVoiceModel, paths.senseVoiceTokens]
+    .filter((file) => !fs.existsSync(file));
+  if (missing.length) throw new Error(missing.join(", "));
 }
 
 export async function downloadModels(opts?: {
@@ -250,15 +324,14 @@ export async function downloadModels(opts?: {
       const ready = funAsrNanoRequiredFiles(paths).every((item) => fs.existsSync(item.path));
       if (!ready) await downloadFunAsrNano({ quiet: false });
     } else if (!fs.existsSync(paths.senseVoiceModel) || !fs.existsSync(paths.senseVoiceTokens)) {
-      const arch = path.join(modelsDir, MODEL_DOWNLOADS.senseVoice.dest);
-      if (!fs.existsSync(arch)) {
-        await downloadFile(
-          MODEL_DOWNLOADS.senseVoice.url,
-          arch,
-          MODEL_DOWNLOADS.senseVoice.name,
-        );
-      }
-      extractTarBz2(arch, modelsDir);
+      const archive = path.join(modelsDir, MODEL_DOWNLOADS.senseVoice.dest);
+      await downloadAndExtract({
+        url: MODEL_DOWNLOADS.senseVoice.url,
+        archive,
+        label: MODEL_DOWNLOADS.senseVoice.name,
+        modelsDir,
+        quiet: false,
+      });
       // optional: keep archive
     }
   }

@@ -3057,6 +3057,15 @@ export function createTui(
         }
         dirty = true;
       },
+      onRetry: () => {
+        if (!modelDownload || modelDownload.engine !== engine) return;
+        modelDownload.percent = 0;
+        modelDownload.stage = "downloading";
+        if (!modelDownload.background && toast?.blocking) {
+          toast.body = progressText(0);
+        }
+        dirty = true;
+      },
     }).then(() => {
       modelDownload = null;
       toast = null;

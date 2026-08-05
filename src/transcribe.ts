@@ -363,6 +363,7 @@ export async function transcribe(
     let pendingSegs: Array<{ samples: Float32Array; start: number }> = [];
     let processing = false;
     let wasPaused = false;
+    let guardedOversizedChunk = false;
     let capture = createCapture(args.source, args.device, (msg) =>
       onStatus(msg),
     );
@@ -371,6 +372,20 @@ export async function transcribe(
     const onPcm = (samples: Float32Array) => {
       if (stop.value || settled) return;
       if (args.paused.value) return;
+
+      // Native capture must never be allowed to grow sherpa's C++ buffer by
+      // minutes at once. Drop an invalid block and keep the TUI responsive.
+      if (samples.length > SAMPLE_RATE * 2) {
+        if (!guardedOversizedChunk) {
+          guardedOversizedChunk = true;
+          onStatus(t("status.audioChunkGuard"));
+        }
+        return;
+      }
+      if (guardedOversizedChunk) {
+        guardedOversizedChunk = false;
+        onStatus("");
+      }
 
       if (activeRecordPath || args.record) {
         syncRecordState();

@@ -109,11 +109,45 @@ function findRecorderExe(): string {
 
 interface LinearResampler {
   resample(samples: Float32Array): Float32Array;
+  reset(): void;
 }
 
 function makeResampler(from: number, to: number): LinearResampler | null {
   if (from === to) return null;
   return new sherpa_onnx.LinearResampler(from, to) as LinearResampler;
+}
+
+const MIN_AUDIO_RATE = 8_000;
+const MAX_AUDIO_RATE = 384_000;
+const MIN_AUDIO_CHANNELS = 1;
+const MAX_AUDIO_CHANNELS = 8;
+
+function validAudioRate(value: number): boolean {
+  return Number.isInteger(value) && value >= MIN_AUDIO_RATE && value <= MAX_AUDIO_RATE;
+}
+
+function validAudioChannels(value: number): boolean {
+  return Number.isInteger(value) &&
+    value >= MIN_AUDIO_CHANNELS && value <= MAX_AUDIO_CHANNELS;
+}
+
+/** Parse recorder.exe format output, including builds that swap rate/channels. */
+export function parseLoopbackCaptureFormat(
+  text: string,
+): { channels: number; sampleRate: number } | null {
+  const re = /channels=(\d+)\s+rate=(\d+)/gi;
+  let result: { channels: number; sampleRate: number } | null = null;
+  for (const match of text.matchAll(re)) {
+    const first = Number(match[1]);
+    const second = Number(match[2]);
+    if (validAudioChannels(first) && validAudioRate(second)) {
+      result = { channels: first, sampleRate: second };
+    } else if (validAudioRate(first) && validAudioChannels(second)) {
+      // Some recorder.exe builds print the values in the opposite order.
+      result = { channels: second, sampleRate: first };
+    }
+  }
+  return result;
 }
 
 /** Int16 LE interleaved PCM → Float32 in [-1, 1] (copy, alignment-safe). */
@@ -187,32 +221,38 @@ function openLoopbackStream(
   let nativeCh = 2;
   let resampler: LinearResampler | null = null;
   let tail: Buffer = Buffer.alloc(0);
-  let stderr = "";
+  let stderrWindow = "";
   let gotData = false;
   let gotAudible = false;
   let alive = true;
   let silentWarned = false;
+  let guardedBadChunk = false;
   const startedAt = Date.now();
 
   child.stderr?.on("data", (d: Buffer) => {
     const s = d.toString();
-    stderr += s;
+    stderrWindow = (stderrWindow + s).slice(-4096);
     // capture format: tag=65534 channels=2 rate=48000 bits=32 (float)
     // (device is float; recorder converts to int16 when not -32)
-    const m = /channels=(\d+)\s+rate=(\d+)/i.exec(s);
-    if (m) {
-      nativeCh = parseInt(m[1]!, 10) || 2;
-      nativeRate = parseInt(m[2]!, 10) || 48000;
+    const format = parseLoopbackCaptureFormat(stderrWindow);
+    if (format &&
+        (format.channels !== nativeCh || format.sampleRate !== nativeRate)) {
+      nativeCh = format.channels;
+      nativeRate = format.sampleRate;
+      tail = Buffer.alloc(0);
       resampler = makeResampler(nativeRate, SAMPLE_RATE);
     }
+    const lastBreak = Math.max(stderrWindow.lastIndexOf("\n"), stderrWindow.lastIndexOf("\r"));
+    if (lastBreak >= 0) stderrWindow = stderrWindow.slice(lastBreak + 1);
   });
 
   child.stdout?.on("data", (chunk: Buffer) => {
     if (!alive) return;
     gotData = true;
     const merged = tail.length ? Buffer.concat([tail, chunk]) : chunk;
-    // 2 bytes per int16 sample
-    const n = merged.length - (merged.length % 2);
+    // Keep complete interleaved frames; channel alignment matters across chunks.
+    const frameBytes = 2 * nativeCh;
+    const n = merged.length - (merged.length % frameBytes);
     tail = Buffer.from(merged.subarray(n));
     const buf = merged.subarray(0, n);
     if (!buf.length) return;
@@ -221,23 +261,42 @@ function openLoopbackStream(
       resampler = makeResampler(nativeRate, SAMPLE_RATE);
     }
 
-    let f32 = i16BufToF32(buf);
-    f32 = toMono(f32, nativeCh);
-    // gentle boost: loopback often quieter than mic
-    let peak = 0;
-    for (let i = 0; i < f32.length; i++) {
-      let v = f32[i]! * 1.4;
-      f32[i] = v > 1 ? 1 : v < -1 ? -1 : v;
-      const a = Math.abs(f32[i]!);
-      if (a > peak) peak = a;
+    // Bound each native call to 250ms so one pipe event cannot flood VAD.
+    const maxFrames = Math.max(1, Math.floor(nativeRate * 0.25));
+    const maxBytes = maxFrames * frameBytes;
+    for (let offset = 0; offset < buf.length; offset += maxBytes) {
+      const part = buf.subarray(offset, Math.min(buf.length, offset + maxBytes));
+      let f32 = toMono(i16BufToF32(part), nativeCh);
+      // gentle boost: loopback often quieter than mic
+      let peak = 0;
+      for (let i = 0; i < f32.length; i++) {
+        const v = f32[i]! * 1.4;
+        f32[i] = v > 1 ? 1 : v < -1 ? -1 : v;
+        const a = Math.abs(f32[i]!);
+        if (a > peak) peak = a;
+      }
+      if (peak > 0.008) {
+        gotAudible = true;
+        silentWarned = false;
+      }
+      const inputLength = f32.length;
+      if (resampler) f32 = resampler.resample(f32);
+      const expected = Math.ceil(inputLength * SAMPLE_RATE / nativeRate) + 64;
+      const safeLimit = Math.max(SAMPLE_RATE, expected * 4);
+      if (f32.length > safeLimit) {
+        resampler?.reset();
+        if (!guardedBadChunk) {
+          guardedBadChunk = true;
+          onError?.(t("status.loopbackDataGuard"));
+        }
+        continue;
+      }
+      if (guardedBadChunk) {
+        guardedBadChunk = false;
+        onError?.("");
+      }
+      if (f32.length) onMono16k(f32);
     }
-    // Any real signal clears "silent" soft-warn state
-    if (peak > 0.008) {
-      gotAudible = true;
-      silentWarned = false;
-    }
-    if (resampler) f32 = resampler.resample(f32);
-    if (f32.length) onMono16k(f32);
   });
 
   child.on("error", (err) => {

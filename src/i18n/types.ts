@@ -114,6 +114,8 @@ export type MessageTree = {
     loopbackFail: string;
     loopbackExit: string;
     loopbackSilent: string;
+    loopbackDataGuard: string;
+    audioChunkGuard: string;
     labelLoopback: string;
     labelBoth: string;
     labelLoopbackShort: string;
@@ -386,6 +388,9 @@ export type MessageTree = {
     autoDownload: string;
     statusOnly: string;
     downloadFail: string;
+    downloadIncomplete: string;
+    downloadRetry: string;
+    archiveCorruptRetry: string;
     extract: string;
     extractOk: string;
     extractFail: string;
