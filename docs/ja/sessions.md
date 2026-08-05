@@ -1,34 +1,69 @@
-# セッションと再生
+# セッションと再開
 
 ## 自動保存
 
+ライブ会議ごとに次が作られます。
+
 ```text
-~/.config/baribari/sessions/<id>/
-  meta.json · transcript.jsonl · speakers.json · audio*.wav
+~/.config/baribari/sessions/<session-id>/
+  meta.json
+  transcript.jsonl     # 行ごとに確定 Segment JSON
+  speakers.json
+  audio.wav            # 録音 (r) / 続行+録音時
+  audio-part-*.wav
 ```
 
-セッション ID は `ses_…` という形式です。表示名は ID とは別に管理され、TUI で `e` を押すと変更できます。
+セッション ID は `ses_…` 形式。表示名は ID と別で、TUI の `e` で変更できます。
 
-## 削除の安全
+## 安全な削除
 
-既定では完全なセッション ID を指定し、同じ ID を再入力して削除を確認します。`-y` で確認を省略でき、`--allow-prefix` は前方一致が一つだけの場合に使用できます。セッション外のファイルを削除しないよう、パストラバーサルも検査します。
+- **削除**（`session rm`）: 既定は**完全 id** + 再入力確認。
+- `-y` で確認スキップ。`--allow-prefix` はプレフィックスが一意なときのみ。
+- パストラバーサル対策あり（`session.ts`）。
 
 ## CLI
 
-`session list|path|rm` · `resume` · `demo`
+```bash
+baribari session list
+baribari session path <id>
+baribari session rm <full-id>
+baribari session rm ses_xxx -y
+baribari session rm ses_ab --allow-prefix
+baribari resume [id]          # 既定 demo
+baribari demo
+```
 
-## Resume
+## 再開モード
 
-Resume モードでは、保存済みの字幕をタイムラインで閲覧し、録音を再生したり各種ツールを実行したりできます。キー操作はライブ文字起こしと異なります（`↑` `↓`、`←` `→`、`Space` / `p`、`c`、`t` / `T`、`m`、`e`、`h`、`q`）。
+保存済みセッションを開き、タイムライン上で字幕を閲覧、録音再生、続行、AI、共有ができます。
 
-![タイムライン、話者ラベル、原文、翻訳を表示する Demo セッション](/screenshots/demo-mode.png)
+![デモセッション: タイムライン、話者、原文と訳](/screenshots/demo-mode.png)
 
-音声の再生には `ffplay` を優先して使用します。複数の音声ファイルは、形式が同じなら結合し、異なる場合は一つのタイムライン上で順に扱います。demo 以外では、`c` を押すと同じセッションで録音を続けられます。
+| キー | 動作 |
+|------|------|
+| `↑` `↓` | 前/次**セグメント**（再生ヘッド移動） |
+| `←` `→` | タイムライン **−2s / +2s** |
+| `Space` / `p` | 再生 / 一時停止（`ffplay` 優先） |
+| `c` | 同一セッションへライブ**続行**（demo 不可） |
+| `t` / `T` | **現在** / **未翻訳すべて**を翻訳（AI） |
+| `m` | 会議**要約**（字幕フォーカス）/ 話者**マージ**（話者パネル） |
+| `s` | 設定 |
+| `e` | セッション名変更 |
+| `h` | **LAN 共有**トグル |
+| `q` | 終了 |
 
-## jsonl
+ライブ専用キー（`r`、`Tab`、`1–9`）は再開では**使いません**。
 
-JSONL ファイルには確定した字幕（**final**）だけを保存します。認識中の状態（partial）はディスクに書き込みません。
+## 複数クリップ音声
 
-## Demo
+- 互換な `audio-part-*.wav` + `audio.wav` → 形式一致時に**マージ**。
+- それ以外は seek/再生用に 1 本のタイムラインへ**連結**。
+- 続行 + 録音は可能なら `audio.wav` へ PCM **追記**。
 
-`resume demo` / `--demo`
+## JSONL セグメント
+
+確定セグメントのみ。典型フィールドは `start`、`end`、`text`、任意で `translation`、`corrected`、`spk` など。部分状態イベントはディスクに書きません。
+
+## デモセッション
+
+`resume demo` / `--demo` 用の内蔵合成会議。実ファイル不要。

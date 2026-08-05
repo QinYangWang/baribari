@@ -7,14 +7,18 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { AsrEngine, AudioSource, Lang, Segment, TranscribeArgs } from "./types.js";
+import type { AsrEngine, AudioSource, Lang, Segment, SpkEngine, TranscribeArgs } from "./types.js";
 import {
   cycleVadPreset,
   displayText,
   isPartialSegment,
   lowLatencyVad,
   matchVadPreset,
+  SPK_ENGINES,
+  defaultSpkThreshold,
+  spkEngineLabel,
 } from "./types.js";
+import { spkModelInfo } from "./speaker-models.js";
 import {
   defaultRecordDir,
   flushSaveSettings,
@@ -43,7 +47,7 @@ import { renameSession } from "./session.js";
 import { createKeyFeeder } from "./key-input.js";
 import { checkModels } from "./paths.js";
 import { modelOverridesFromSettings } from "./settings.js";
-import { downloadAsrModel } from "./setup.js";
+import { downloadAsrModel, downloadSpkModel } from "./setup.js";
 
 /** Prefer a non-internal IPv4 for LAN share URLs. */
 function lanIPv4(): string[] {
@@ -901,7 +905,8 @@ export function createTui(
     blocking?: boolean;
   } | null = null;
   let modelDownload: {
-    engine: AsrEngine;
+    kind: "asr" | "spk";
+    engine: AsrEngine | SpkEngine;
     name: string;
     percent: number;
     stage: "downloading" | "extracting";
@@ -1003,6 +1008,7 @@ export function createTui(
     | "uiLang"
     | "asrEngine"
     | "lang"
+    | "spkEngine"
     | "spkThr"
     | "aiEn"
     | "aiTranslate"
@@ -1048,6 +1054,12 @@ export function createTui(
       key: "lang",
       label: t("settings.items.lang.label"),
       help: t("settings.items.lang.help"),
+      group: t("settings.groups.asr"),
+    },
+    {
+      key: "spkEngine",
+      label: t("settings.items.spkEngine.label"),
+      help: t("settings.items.spkEngine.help"),
       group: t("settings.groups.asr"),
     },
     {
@@ -1228,6 +1240,13 @@ export function createTui(
         return {
           text: asrEngineLabel(args.asrEngine),
           fg: C.accent,
+        };
+      case "spkEngine":
+        return {
+          text: args.noSpk
+            ? t("common.off")
+            : spkEngineLabel(args.spkEngine),
+          fg: args.noSpk ? C.muted : C.accent,
         };
       case "spkThr":
         return {
@@ -2926,6 +2945,19 @@ export function createTui(
             ASR_ENGINES.length
         ]!);
         break;
+      case "spkEngine":
+        {
+          const choices: Array<"off" | SpkEngine> = ["off", ...SPK_ENGINES];
+          const current: "off" | SpkEngine = args.noSpk
+            ? "off"
+            : args.spkEngine;
+          const next = choices[
+            (choices.indexOf(current) + dir + choices.length) % choices.length
+          ]!;
+          if (next === "off") disableSpkEngine();
+          else requestSpkEngine(next);
+        }
+        break;
       case "spkThr":
         nudgeThreshold(dir);
         break;
@@ -2998,6 +3030,24 @@ export function createTui(
     dirty = true;
   }
 
+  function applySpkEngine(engine: SpkEngine): void {
+    const prev = args.spkEngine;
+    args.spkEngine = engine;
+    args.noSpk = false;
+    // When user has not customized threshold, move to the new model default
+    if (
+      Math.abs(args.spkThreshold - defaultSpkThreshold(prev)) < 0.001 ||
+      args.spkThreshold === defaultSpkThreshold(prev)
+    ) {
+      args.spkThreshold = defaultSpkThreshold(engine);
+    }
+    persist();
+    notify(`${t("settings.spkEngine.applied", {
+      name: spkEngineLabel(engine),
+    })} · ${t("settings.spkEngine.restartHint")}`);
+    dirty = true;
+  }
+
   function requestAsrEngine(engine: AsrEngine): void {
     if (engine === args.asrEngine) return;
     if (modelDownload) {
@@ -3020,28 +3070,73 @@ export function createTui(
       }), {
         confirm: true,
         onCancel: () => {},
-        onConfirm: () => startModelDownload(engine, name, false),
-        onBackground: () => startModelDownload(engine, name, true),
+        onConfirm: () => startAsrModelDownload(engine, name, false),
+        onBackground: () => startAsrModelDownload(engine, name, true),
       });
   }
 
-  function startModelDownload(
+  function requestSpkEngine(engine: SpkEngine): void {
+    if (engine === args.spkEngine && !args.noSpk) return;
+    if (modelDownload) {
+      notify(t("settings.asrEngine.downloadRunning", { name: modelDownload.name }));
+      return;
+    }
+    const ready = checkModels(modelOverridesFromSettings(), {
+      requireSpk: true,
+      asrEngine: args.asrEngine,
+      spkEngine: engine,
+    }).ok;
+    if (ready) {
+      applySpkEngine(engine);
+      return;
+    }
+    const info = spkModelInfo(engine);
+    const name = spkEngineLabel(engine);
+    showToast(
+      "warn",
+      t("settings.spkEngine.downloadTitle", { name }),
+      t("settings.spkEngine.downloadAsk", {
+        name,
+        size: info.approx,
+      }),
+      {
+        confirm: true,
+        onCancel: () => {},
+        onConfirm: () => startSpkModelDownload(engine, name, false),
+        onBackground: () => startSpkModelDownload(engine, name, true),
+      },
+    );
+  }
+
+  function disableSpkEngine(): void {
+    if (args.noSpk) return;
+    args.noSpk = true;
+    persist();
+    notify(`${t("settings.spkEngine.applied", {
+      name: t("common.off"),
+    })} · ${t("settings.spkEngine.restartHint")}`);
+    dirty = true;
+  }
+
+  function progressBarText(percent: number): string {
+    const width = 24;
+    const value = Math.max(0, Math.min(100, percent));
+    const filled = Math.round((value / 100) * width);
+    return `${"█".repeat(filled)}${"░".repeat(width - filled)}  ${value}%`;
+  }
+
+  function startAsrModelDownload(
     engine: AsrEngine,
     name: string,
     background: boolean,
   ): void {
     modelDownload = {
+      kind: "asr",
       engine,
       name,
       percent: 0,
       stage: "downloading",
       background,
-    };
-    const progressText = (percent: number) => {
-      const width = 24;
-      const value = Math.max(0, Math.min(100, percent));
-      const filled = Math.round((value / 100) * width);
-      return `${"█".repeat(filled)}${"░".repeat(width - filled)}  ${value}%`;
     };
     if (background) {
       toast = null;
@@ -3052,7 +3147,7 @@ export function createTui(
       showToast(
         "info",
         t("settings.asrEngine.downloading", { name }),
-        progressText(0),
+        progressBarText(0),
         { blocking: true },
       );
     }
@@ -3061,15 +3156,15 @@ export function createTui(
 
     void downloadAsrModel(engine, {
       onProgress: (percent) => {
-        if (!modelDownload || modelDownload.engine !== engine) return;
+        if (!modelDownload || modelDownload.kind !== "asr" || modelDownload.engine !== engine) return;
         modelDownload.percent = Math.max(0, Math.min(100, percent));
         if (!modelDownload.background && toast?.blocking) {
-          toast.body = progressText(modelDownload.percent);
+          toast.body = progressBarText(modelDownload.percent);
         }
         dirty = true;
       },
       onExtract: () => {
-        if (!modelDownload || modelDownload.engine !== engine) return;
+        if (!modelDownload || modelDownload.kind !== "asr" || modelDownload.engine !== engine) return;
         modelDownload.percent = 100;
         modelDownload.stage = "extracting";
         if (!modelDownload.background && toast?.blocking) {
@@ -3078,11 +3173,11 @@ export function createTui(
         dirty = true;
       },
       onRetry: () => {
-        if (!modelDownload || modelDownload.engine !== engine) return;
+        if (!modelDownload || modelDownload.kind !== "asr" || modelDownload.engine !== engine) return;
         modelDownload.percent = 0;
         modelDownload.stage = "downloading";
         if (!modelDownload.background && toast?.blocking) {
-          toast.body = progressText(0);
+          toast.body = progressBarText(0);
         }
         dirty = true;
       },
@@ -3094,6 +3189,65 @@ export function createTui(
       modelDownload = null;
       toast = null;
       showToast("error", t("settings.asrEngine.downloadFailed", { name }), String(error));
+    });
+  }
+
+  function startSpkModelDownload(
+    engine: SpkEngine,
+    name: string,
+    background: boolean,
+  ): void {
+    modelDownload = {
+      kind: "spk",
+      engine,
+      name,
+      percent: 0,
+      stage: "downloading",
+      background,
+    };
+    if (background) {
+      toast = null;
+      mode = "normal";
+      focusPanel = "transcript";
+      status = t("settings.spkEngine.backgroundStarted", { name });
+    } else {
+      showToast(
+        "info",
+        t("settings.spkEngine.downloading", { name }),
+        progressBarText(0),
+        { blocking: true },
+      );
+    }
+    dirty = true;
+    paint({ urgent: true });
+
+    void downloadSpkModel(engine, {
+      quiet: true,
+      onProgress: (percent) => {
+        if (!modelDownload || modelDownload.kind !== "spk" || modelDownload.engine !== engine) return;
+        modelDownload.percent = Math.max(0, Math.min(100, percent));
+        if (!modelDownload.background && toast?.blocking) {
+          toast.body = progressBarText(modelDownload.percent);
+        }
+        dirty = true;
+      },
+      onRetry: () => {
+        if (!modelDownload || modelDownload.kind !== "spk" || modelDownload.engine !== engine) return;
+        modelDownload.percent = 0;
+        modelDownload.stage = "downloading";
+        if (!modelDownload.background && toast?.blocking) {
+          toast.body = progressBarText(0);
+        }
+        dirty = true;
+      },
+    }).then(() => {
+      modelDownload = null;
+      toast = null;
+      applySpkEngine(engine);
+    }).catch((error) => {
+      modelDownload = null;
+      toast = null;
+      showToast("error", t("settings.spkEngine.downloadFailed", { name }), String(error));
     });
   }
 

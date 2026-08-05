@@ -15,7 +15,7 @@
 |-------|--------|
 | Language | TypeScript → Node ≥ 18 (`type: module`) |
 | CLI | `commander` |
-| ASR / VAD / spk | `sherpa-onnx-node` (SenseVoice, Fun-ASR-Nano, ReazonSpeech, Silero VAD, 3D-Speaker CAM++) |
+| ASR / VAD / spk | `sherpa-onnx-node` (SenseVoice, Fun-ASR-Nano, ReazonSpeech, Silero VAD, 3D-Speaker CAM++ / ERes2Net-large) |
 | Capture | `node-cpal` + `bionic-audio` (mic; Windows loopback/both) |
 | Share | `ws` + small HTTP page |
 | TUI | Custom ANSI (`src/tui.ts`), not Ink/Blessed |
@@ -65,7 +65,8 @@ LAN participants see finalized captions and translations in a browser without ru
 | `src/tui.ts` | Live fullscreen UI + settings |
 | `src/resume-tui.ts` | Session browser, playback, continue, AI tools |
 | `src/session.ts` | Paths, meta, jsonl, multi-clip audio, delete safety |
-| `src/speaker-tracker.ts` | Centroid ID + multi-window voting |
+| `src/speaker-tracker.ts` | Template-bank ID + multi-window voting + hysteresis |
+| `src/speaker-models.ts` | Speaker embedding catalog (paths, defaults) |
 | `src/speaker-library.ts` | Global `roster.json` |
 | `src/speaker-turn.ts` | Same-speaker coalesce before AI |
 | `src/postprocess.ts` | Local dict / cleanup |

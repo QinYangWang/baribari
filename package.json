@@ -21,6 +21,7 @@
     "check:i18n": "node scripts/check-i18n.mjs",
     "check:i18n:strict": "node scripts/check-i18n.mjs --strict",
     "test:ai-guard": "tsx scripts/test-ai-translation-guard.ts",
+    "test:speaker": "tsx scripts/test-speaker-id.ts",
     "precommit": "node scripts/pre-commit.mjs",
     "hooks:install": "git config core.hooksPath .githooks",
     "prepublishOnly": "npm run typecheck && npm run check:i18n && npm run build",

@@ -5,42 +5,39 @@ titleTemplate: meeting transcription in your terminal
 
 hero:
   name: baribari
-  text: Stay in the meeting. Keep the notes.
-  tagline: Transcribe meetings in your terminal with on-device recognition, speaker labels, and optional AI. Reopen any session later to review, continue recording, translate, or summarize it.
+  text: Stay in the meeting. Keep every word.
+  tagline: Local speech recognition, speaker labels, saved sessions, and optional AI — in one terminal-first meeting tool.
   actions:
     - theme: brand
-      text: Get started
-      link: https://github.com/QinYangWang/baribari#quick-start
+      text: Quick start
+      link: /quick-start
     - theme: alt
-      text: How it works
-      link: /architecture
-    - theme: alt
-      text: View on npm
-      link: https://www.npmjs.com/package/baribari
+      text: Read the docs
+      link: /overview
 
 features:
-  - title: Follow live captions
-    details: Text appears while the meeting is in progress. If you miss something, scroll back through the transcript instead of relying on memory or incomplete notes.
-    link: /sessions
-    linkText: Open sessions guide
+  - title: Follow the meeting live
+    details: Watch captions appear as people speak and scroll back when you miss a line.
+    link: /live
+    linkText: Live transcription
   - title: Keep recognition local
-    details: SenseVoice, Fun-ASR-Nano, ReazonSpeech, and Silero VAD run on your machine, so speech recognition does not require uploading audio. A cloud service is used only when you enable and configure optional AI features.
+    details: SenseVoice, Fun-ASR-Nano, ReazonSpeech, and Silero VAD run on your machine.
     link: /asr-pipeline
-    linkText: Open ASR guide
-  - title: Label who said what
-    details: Voice embeddings distinguish speakers, and a global roster remembers frequent attendees. If automatic labels are wrong, you can merge, rename, or reassign them.
+    linkText: ASR pipeline
+  - title: Know who said what
+    details: Voice embeddings label speakers, while a global roster remembers frequent attendees.
     link: /speakers
-    linkText: Open speakers guide
-  - title: Save each meeting separately
-    details: Every live session saves its transcript and optional audio in one folder. Reopen it later to continue recording, translate, or summarize it.
+    linkText: Speakers guide
+  - title: Return to any session
+    details: Reopen a meeting to play audio, continue recording, correct, translate, summarize, or share.
     link: /sessions
-    linkText: Open resume guide
-  - title: Share without extra models
-    details: One computer transcribes and hosts the session on the LAN. Other participants can follow finalized captions in a browser or CLI without downloading ASR models.
-    link: /architecture
-    linkText: Open architecture
-  - title: Terminal-first, three UI languages
-    details: A fullscreen TUI for the host. Switch the interface among English, 中文, and 日本語 — independent of the language you recognize.
+    linkText: Sessions & resume
+  - title: Share from one host
+    details: Let people on the LAN follow finalized captions in a browser without installing models.
+    link: /share
+    linkText: LAN sharing
+  - title: Use the language you need
+    details: Switch the TUI among English, 中文, and 日本語 independently of recognition language.
     link: /tui-i18n
-    linkText: Open TUI guide
+    linkText: TUI & languages
 ---

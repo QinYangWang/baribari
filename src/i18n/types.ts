@@ -72,6 +72,7 @@ export type MessageTree = {
     speakerAdded: string;
     renamed: string;
     globalSpeakersLoaded: string;
+    globalSpeakersModelMismatch: string;
     speakerSavedGlobal: string;
     deletedAlias: string;
     cannotDeleteAuto: string;
@@ -231,6 +232,7 @@ export type MessageTree = {
       uiLang: { label: string; help: string };
       asrEngine: { label: string; help: string };
       lang: { label: string; help: string };
+      spkEngine: { label: string; help: string };
       spkThr: { label: string; help: string };
       aiEn: { label: string; help: string };
       aiTranslate: { label: string; help: string };
@@ -263,6 +265,15 @@ export type MessageTree = {
       extracting: string;
       downloadFailed: string;
       downloadRunning: string;
+      backgroundStarted: string;
+    };
+    spkEngine: {
+      applied: string;
+      restartHint: string;
+      downloadTitle: string;
+      downloadAsk: string;
+      downloading: string;
+      downloadFailed: string;
       backgroundStarted: string;
     };
     /** VAD preset labels (←→ in settings). */
@@ -300,6 +311,8 @@ export type MessageTree = {
     sourceOpt: string;
     outputOpt: string;
     noSpk: string;
+    spkEngine: string;
+    invalidSpkEngine: string;
     spkThreshold: string;
     noTui: string;
     record: string;
@@ -384,6 +397,14 @@ export type MessageTree = {
     reazonSpeech: string;
     reazonSpeechContains: string;
     spkOptional: string;
+    spkRecommended: string;
+    spkLegacy: string;
+    spkNoSpkHint: string;
+    chooseSpk: string;
+    spkEres2netOption: string;
+    spkCampplusOption: string;
+    spkSkipOption: string;
+    selectSpk: string;
     pages: string;
     asrVad: string;
     spk: string;

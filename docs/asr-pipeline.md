@@ -5,7 +5,7 @@
 1. **Capture** — mic / loopback / both → float32 PCM @ 16 kHz.
 2. **VAD (Silero)** — endpointing into speech chunks (`src/transcribe.ts`).
 3. **ASR (SenseVoice)** — offline decode of each chunk; language `auto|zh|en|ja|ko|yue`.
-4. **Speaker ID** — embedding on the chunk; multi-window vote (`speaker-tracker.ts`).
+4. **Speaker ID** — selected embedding model on the chunk; multi-window vote + template bank (`speaker-tracker.ts`).
 5. **Turn merge** — optional coalesce of same-speaker micro-finals (`speaker-turn.ts`).
 6. **Postprocess** — cleanup + `replace.json` (`postprocess.ts`).
 7. **Emit final** — TUI history, `transcript.jsonl`, LAN share.
@@ -77,6 +77,5 @@ After turn merge, before AI:
 | Fun-ASR-Nano | Offline + VAD; Chinese, English, Japanese | Available |
 | ReazonSpeech | Offline Zipformer transducer; Japanese optimized | Available |
 | Online zipformer | True partials | Roadmap |
-| External `--engine-cmd` | Subprocess protocol | Roadmap |
 
 See [roadmap](./roadmap.md).

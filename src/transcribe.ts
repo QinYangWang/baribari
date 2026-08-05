@@ -20,8 +20,9 @@ import { SherpaSpeakerTracker } from "./speaker-tracker.js";
 import {
   loadSpeakerRoster,
   mergeGlobalSpeakerUpdates,
-  upsertGlobalSpeaker,
+  speakersForModel,
 } from "./speaker-library.js";
+import { LEGACY_SPK_ENGINE, spkEngineDefaults } from "./speaker-models.js";
 import {
   createCapture,
   listMicDevices,
@@ -156,14 +157,18 @@ function buildVad(
   );
 }
 
-function buildSpeakerExtractor(paths: ReturnType<typeof modelPaths>) {
-  if (!fs.existsSync(paths.spk)) {
+function buildSpeakerExtractor(
+  paths: ReturnType<typeof modelPaths>,
+  spkEngine: import("./speaker-models.js").SpkEngine,
+) {
+  const modelPath = paths.spkByEngine?.[spkEngine] || paths.spk;
+  if (!fs.existsSync(modelPath)) {
     throw new Error(
-      t("errors.spkModelMissing", { path: paths.spk }),
+      t("errors.spkModelMissing", { path: modelPath }),
     );
   }
   return new sherpa_onnx.SpeakerEmbeddingExtractor({
-    model: paths.spk,
+    model: modelPath,
     numThreads: 2,
     debug: false,
   });
@@ -183,8 +188,13 @@ export async function transcribe(
   stop: { value: boolean },
   onStatus: StatusFn = () => {},
 ): Promise<void> {
-  const paths = modelPaths(modelOverridesFromSettings());
-  assertModelsExist(paths, { requireSpk: !args.noSpk, asrEngine: args.asrEngine });
+  const spkEngine = args.spkEngine ?? LEGACY_SPK_ENGINE;
+  const paths = modelPaths(modelOverridesFromSettings(), { spkEngine });
+  assertModelsExist(paths, {
+    requireSpk: !args.noSpk,
+    asrEngine: args.asrEngine,
+    spkEngine,
+  });
 
   onStatus(t("status.loadingModels"));
   let recognizer = buildRecognizer(args.asrEngine, args.lang, paths);
@@ -195,22 +205,37 @@ export async function transcribe(
 
   let tracker: SherpaSpeakerTracker | null = null;
   if (!args.noSpk) {
-    tracker = new SherpaSpeakerTracker(buildSpeakerExtractor(paths), args);
-    // Fixed attendees: seed centroids so spk 1..G match roster across meetings
+    const extractor = buildSpeakerExtractor(paths, spkEngine);
+    const dim =
+      typeof extractor.dim === "number" && extractor.dim > 0
+        ? extractor.dim
+        : spkEngineDefaults(spkEngine).dim;
+    tracker = new SherpaSpeakerTracker(extractor, args, {
+      model: spkEngine,
+      dim,
+    });
+    // Fixed attendees: seed only same-model embeddings (ignore other models)
     try {
       const roster = loadSpeakerRoster();
-      if (roster.speakers.length) {
+      const compatible = speakersForModel(roster, spkEngine);
+      if (compatible.length) {
         tracker.seedGlobal(
-          roster.speakers.map((s) => ({
+          compatible.map((s) => ({
             id: s.id,
             displayName: s.displayName,
             embedding: s.embedding,
+            embeddings: s.embeddings,
             count: s.count,
           })),
         );
         onStatus(
-          t("status.globalSpeakersLoaded", { n: roster.speakers.length }),
+          t("status.globalSpeakersLoaded", { n: compatible.length }),
         );
+      } else if (roster.speakers.length) {
+        onStatus(t("status.globalSpeakersModelMismatch", {
+          n: roster.speakers.length,
+          model: spkEngine,
+        }));
       }
     } catch {
       /* ignore roster load errors */

@@ -2,48 +2,68 @@
 
 ## 自动保存
 
+每次实时会议会创建：
+
 ```text
 ~/.config/baribari/sessions/<session-id>/
   meta.json
-  transcript.jsonl    # 仅 final
+  transcript.jsonl     # 每行一条最终 Segment JSON
   speakers.json
-  audio.wav / audio-part-*.wav
+  audio.wav            # 开启录音 (r) / 续录+录音时
+  audio-part-*.wav
 ```
 
-会话 ID 的格式为 `ses_…`；在 TUI 中按 `e` 可以修改会话的显示名称。
+会话 ID 形如 `ses_…`。显示名与 ID 分离，可在 TUI 按 `e` 修改。
 
 ## 安全删除
 
-- 默认必须提供**完整的会话 ID**，并再次输入以确认。  
-- `-y` 可跳过确认；只有当前缀唯一时，才能使用 `--allow-prefix` 按前缀删除。  
-- `session.ts` 会检查路径，避免通过路径穿越删除会话目录之外的文件。  
+- **删除**（`session rm`）：默认需要**完整 id** + 再次输入确认。
+- `-y` 跳过确认；`--allow-prefix` 仅在前缀唯一时可用。
+- 路径处理防止目录穿越（`session.ts`）。
 
 ## CLI
 
 ```bash
 baribari session list
 baribari session path <id>
-baribari session rm <full-id>
-baribari resume [id]
+baribari session rm <完整id>
+baribari session rm ses_xxx -y
+baribari session rm ses_ab --allow-prefix
+baribari resume [id]          # 默认 demo
 baribari demo
 ```
 
-## Resume 模式
+## 回放模式
 
-Resume 模式用于沿时间轴浏览字幕、播放可选录音，以及继续处理已有会话。它的快捷键与实时转写模式不同：`↑` `↓` 切换字幕段，`←` `→` 调整播放位置，`Space` / `p` 播放或暂停，`c` 续录，`t` / `T` 翻译，`m` 总结或合并说话人，`e` 改名，`h` 共享，`q` 退出。
+打开已保存会话，而不是新开实时会议。可在时间轴上浏览字幕、播放录音、续录、跑 AI 工具或共享。
 
-![Demo 会话，包含时间轴、说话人标签、原文和译文](/screenshots/demo-mode.png)
+![Demo 会话：时间轴、说话人、原文与译文](/screenshots/demo-mode.png)
 
-播放音频时优先使用 `ffplay`；如果不可用，则尝试 `ffmpeg-static` 和系统播放器。程序会尽量合并多段音频，无法合并时则在同一时间轴上连续播放。按 `c` 会在**当前会话**中继续录制，demo 会话除外。
+| 键 | 作用 |
+|----|------|
+| `↑` `↓` | 上/下一条字幕（播放头跟随） |
+| `←` `→` | 时间轴 −2s / +2s |
+| `Space` / `p` | 播放/暂停（优先 `ffplay`） |
+| `c` | 在同一会话中**继续录制**（demo 不支持） |
+| `t` / `T` | 翻译当前 / 翻译所有缺失 |
+| `m` | 会议总结（字幕区）/ **合并**说话人（说话人栏） |
+| `s` | 设置 |
+| `e` | 重命名会话 |
+| `h` | 切换局域网共享 |
+| `q` | 退出 |
+
+实时专用键（`r`、`Tab`、`1–9`）在回放中**不可用**。
 
 ## 多段音频
 
-格式一致时，程序会合并多段音频；格式不一致时，则按顺序连接播放。续录产生的音频会尽量**追加**到 `audio.wav`。
+- 格式一致的 `audio-part-*.wav` + `audio.wav` → **合并**。
+- 否则在一条时间轴上**串接**以便 seek/播放。
+- 续录 + 录音在可能时**追加** PCM 到 `audio.wav`。
 
-## jsonl
+## JSONL 片段
 
-JSONL 文件只保存最终字幕（final），包含 `start`、`end`、`text` 字段，以及可选的 `translation`、`corrected`、`spk` 字段。临时状态（partial）不会写入文件。
+只写最终段。常见字段：`start`、`end`、`text`，以及可选的 `translation`、`corrected`、`spk` 等。部分状态事件从不落盘。
 
-## Demo
+## Demo 会话
 
-内置样例：`resume demo` / `--demo`。
+内置示例会议，供 `resume demo` / `--demo` 使用，无需真实文件。

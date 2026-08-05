@@ -21,6 +21,25 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { t } from "./i18n/index.js";
 import type { AsrEngine } from "./types.js";
+import {
+  DEFAULT_SPK_ENGINE,
+  LEGACY_SPK_ENGINE,
+  SPK_ENGINES,
+  SPK_MODELS,
+  isSpkEngine,
+  spkModelPath,
+  type SpkEngine,
+} from "./speaker-models.js";
+
+export type { SpkEngine };
+export {
+  DEFAULT_SPK_ENGINE,
+  LEGACY_SPK_ENGINE,
+  SPK_ENGINES,
+  SPK_MODELS,
+  isSpkEngine,
+  spkModelPath,
+};
 
 export const SAMPLE_RATE = 16_000;
 
@@ -84,7 +103,11 @@ export interface ModelPathOverrides {
   reazonSpeechDecoder?: string;
   reazonSpeechJoiner?: string;
   reazonSpeechTokens?: string;
+  /** Absolute path override for the active speaker model file. */
   spk?: string;
+  /** Per-engine speaker model path overrides. */
+  spkCampplus?: string;
+  spkEres2netLarge?: string;
 }
 
 export interface ResolvedModelPaths {
@@ -104,7 +127,11 @@ export interface ResolvedModelPaths {
   reazonSpeechDecoder: string;
   reazonSpeechJoiner: string;
   reazonSpeechTokens: string;
+  /** Active speaker embedding model path (for selected spkEngine). */
   spk: string;
+  /** Resolved path per speaker engine. */
+  spkByEngine: Record<SpkEngine, string>;
+  spkEngine: SpkEngine;
 }
 
 function resolveMaybe(p: string | undefined, base: string): string | undefined {
@@ -130,7 +157,10 @@ function findSenseVoiceDir(modelsDir: string, preferred?: string): string {
  * Priority: per-file overrides > modelsDir override > ~/.config/baribari/models
  * Also falls back to package-local ./models for dev checkouts.
  */
-export function modelPaths(overrides: ModelPathOverrides = {}): ResolvedModelPaths {
+export function modelPaths(
+  overrides: ModelPathOverrides = {},
+  opts?: { spkEngine?: SpkEngine },
+): ResolvedModelPaths {
   const cfg = configDir();
   const pkgModels = path.join(packageRoot(), "models");
 
@@ -161,12 +191,22 @@ export function modelPaths(overrides: ModelPathOverrides = {}): ResolvedModelPat
   const senseVoiceTokens =
     resolveMaybe(overrides.senseVoiceTokens, cfg) ||
     path.join(senseVoiceDir, "tokens.txt");
-  const spk =
-    resolveMaybe(overrides.spk, cfg) ||
-    path.join(
-      modelsDir,
-      "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx",
-    );
+
+  const campplusDefault = spkModelPath(modelsDir, "campplus");
+  const eresDefault = spkModelPath(modelsDir, "eres2net-large");
+  const legacySpk = resolveMaybe(overrides.spk, cfg);
+  const spkByEngine: Record<SpkEngine, string> = {
+    campplus:
+      resolveMaybe(overrides.spkCampplus, cfg) ||
+      legacySpk ||
+      campplusDefault,
+    "eres2net-large":
+      resolveMaybe(overrides.spkEres2netLarge, cfg) ||
+      eresDefault,
+  };
+  const spkEngine = opts?.spkEngine ?? LEGACY_SPK_ENGINE;
+  const spk = spkByEngine[spkEngine];
+
   const funAsrNanoEncoderAdaptor =
     resolveMaybe(overrides.funAsrNanoEncoderAdaptor, cfg) ||
     path.join(funAsrNanoDir, "encoder_adaptor.int8.onnx");
@@ -210,6 +250,8 @@ export function modelPaths(overrides: ModelPathOverrides = {}): ResolvedModelPat
     reazonSpeechJoiner,
     reazonSpeechTokens,
     spk,
+    spkByEngine,
+    spkEngine,
   };
 }
 
@@ -272,17 +314,25 @@ export function funAsrNanoRequiredFiles(paths: ResolvedModelPaths): Array<{
 
 export function checkModels(
   overrides: ModelPathOverrides = {},
-  opts?: { requireSpk?: boolean; asrEngine?: AsrEngine },
+  opts?: {
+    requireSpk?: boolean;
+    asrEngine?: AsrEngine;
+    spkEngine?: SpkEngine;
+  },
 ): ModelCheckResult {
-  const paths = modelPaths(overrides);
+  const spkEngine = opts?.spkEngine;
+  const paths = modelPaths(overrides, spkEngine ? { spkEngine } : undefined);
   const requireSpk = opts?.requireSpk !== false;
   const missing: ModelCheckResult["missing"] = [];
   const asrEngine = opts?.asrEngine ?? "sensevoice";
   const asr = asrRequiredFiles(paths, asrEngine);
+  const spkPath = spkEngine
+    ? paths.spkByEngine[spkEngine] || paths.spk
+    : paths.spk;
   const need = [
     { key: "vad", path: paths.vad, required: true },
     ...asr,
-    { key: "spk", path: paths.spk, required: requireSpk },
+    { key: "spk", path: spkPath, required: requireSpk },
   ];
   for (const n of need) {
     if (n.required && !fs.existsSync(n.path)) missing.push(n);
@@ -292,7 +342,11 @@ export function checkModels(
 
 export function assertModelsExist(
   paths: ResolvedModelPaths,
-  opts?: { requireSpk?: boolean; asrEngine?: AsrEngine },
+  opts?: {
+    requireSpk?: boolean;
+    asrEngine?: AsrEngine;
+    spkEngine?: SpkEngine;
+  },
 ): void {
   const requireSpk = opts?.requireSpk !== false;
   const missing: string[] = [];
@@ -301,7 +355,10 @@ export function assertModelsExist(
   for (const p of [paths.vad, ...asr]) {
     if (!fs.existsSync(p)) missing.push(p);
   }
-  if (requireSpk && !fs.existsSync(paths.spk)) missing.push(paths.spk);
+  const spkPath = opts?.spkEngine
+    ? paths.spkByEngine[opts.spkEngine] || paths.spk
+    : paths.spk;
+  if (requireSpk && !fs.existsSync(spkPath)) missing.push(spkPath);
   if (missing.length) {
     throw new Error(
       t("errors.modelsMissing", {
@@ -362,13 +419,34 @@ export const MODEL_DOWNLOADS = {
     ],
   },
   spk: {
-    name: "3dspeaker CAM++ (speaker embedding)",
-    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx",
-    dest: "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx",
-    approx: "~27 MB",
+    name: SPK_MODELS.campplus.name,
+    url: SPK_MODELS.campplus.url,
+    dest: SPK_MODELS.campplus.fileName,
+    approx: SPK_MODELS.campplus.approx,
+  },
+  spkCampplus: {
+    id: "campplus" as const,
+    name: `${SPK_MODELS.campplus.name} (speaker embedding)`,
+    url: SPK_MODELS.campplus.url,
+    dest: SPK_MODELS.campplus.fileName,
+    approx: SPK_MODELS.campplus.approx,
+  },
+  spkEres2netLarge: {
+    id: "eres2net-large" as const,
+    name: `${SPK_MODELS["eres2net-large"].name} (speaker embedding, recommended)`,
+    url: SPK_MODELS["eres2net-large"].url,
+    dest: SPK_MODELS["eres2net-large"].fileName,
+    approx: SPK_MODELS["eres2net-large"].approx,
   },
   pages: {
     asr: "https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models",
     spk: "https://github.com/k2-fsa/sherpa-onnx/releases/tag/speaker-recongition-models",
   },
 } as const;
+
+/** Download metadata for a speaker engine. */
+export function spkDownloadInfo(engine: SpkEngine) {
+  return engine === "eres2net-large"
+    ? MODEL_DOWNLOADS.spkEres2netLarge
+    : MODEL_DOWNLOADS.spkCampplus;
+}

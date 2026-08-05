@@ -5,42 +5,39 @@ titleTemplate: ターミナルで会議を文字起こし
 
 hero:
   name: baribari
-  text: 会議に集中。記録は残す。
-  tagline: 会議の音声をターミナル上でリアルタイムに文字起こしします。ローカル認識、話者ラベル、任意の AI に対応し、保存したセッションはあとから再生、続行録音、翻訳、要約ができます。
+  text: 会議に集中。すべての言葉を残す。
+  tagline: ローカル音声認識、話者ラベル、セッション保存、任意の AI を、一つの会議向けターミナルツールにまとめます。
   actions:
     - theme: brand
-      text: はじめる
-      link: https://github.com/QinYangWang/baribari/blob/main/README.ja.md#%E3%82%AF%E3%82%A4%E3%83%83%E3%82%AF%E3%82%B9%E3%82%BF%E3%83%BC%E3%83%88
+      text: クイックスタート
+      link: /ja/quick-start
     - theme: alt
-      text: 仕組みを見る
-      link: /ja/architecture
-    - theme: alt
-      text: npm で見る
-      link: https://www.npmjs.com/package/baribari
+      text: ドキュメント
+      link: /ja/overview
 
 features:
-  - title: 会議中に字幕を確認
-    details: 会議の進行に合わせて字幕が表示されます。聞き逃したときは履歴を遡って確認できるため、記憶や不完全なメモだけに頼る必要がありません。
-    link: /ja/sessions
-    linkText: セッションを見る
-  - title: 音声認識はローカルで実行
-    details: SenseVoice、Fun-ASR-Nano、ReazonSpeech、Silero VAD は自分の PC 上で動作するため、音声認識にクラウドへのアップロードは不要です。外部サービスを使うのは、任意の AI 機能を有効にした場合だけです。
+  - title: 会議を字幕で追う
+    details: 発話に合わせて字幕を表示し、聞き逃した内容は上へ戻って確認できます。
+    link: /ja/live
+    linkText: ライブ文字起こし
+  - title: 音声認識をローカルに保つ
+    details: SenseVoice、Fun-ASR-Nano、ReazonSpeech、Silero VAD は端末上で動作します。
     link: /ja/asr-pipeline
-    linkText: ASR を見る
-  - title: 発言者をラベル付け
-    details: 声紋を使って話者を区別し、頻繁に会う人はグローバル名簿に保存できます。自動判定が違う場合は、統合、改名、手動割り当てで修正できます。
+    linkText: ASR パイプライン
+  - title: 誰が何を話したか分かる
+    details: 声紋で発言者をラベル付けし、グローバル名簿が頻繁に会う人を記憶します。
     link: /ja/speakers
-    linkText: 話者を見る
-  - title: 会議ごとに自動保存
-    details: ライブ文字起こしを実行するたびに、字幕と任意の録音が一つのフォルダへ保存されます。あとから続行録音、翻訳、要約ができます。
+    linkText: 話者ガイド
+  - title: いつでもセッションへ戻る
+    details: 会議を開き直して、再生、続行、修正、翻訳、要約、共有ができます。
     link: /ja/sessions
-    linkText: 再生を見る
-  - title: モデルを追加せずに共有
-    details: 1 台の PC が文字起こしと LAN 配信を担当します。ほかの参加者は認識モデルをダウンロードせず、ブラウザや CLI から確定字幕を確認できます。
-    link: /ja/architecture
-    linkText: 設計を見る
-  - title: ターミナル優先、UI は三言語
-    details: ホスト向けフルスクリーン TUI。表示は英語・中国語・日本語を切り替え可能。認識言語とは独立している。
+    linkText: セッションと再開
+  - title: 1 台のホストから共有
+    details: LAN 上の参加者はモデルを追加せず、ブラウザで確定字幕を確認できます。
+    link: /ja/share
+    linkText: LAN 共有
+  - title: 必要な表示言語を選ぶ
+    details: English、中文、日本語の表示を認識言語とは独立して切り替えられます。
     link: /ja/tui-i18n
-    linkText: TUI を見る
+    linkText: TUI と言語
 ---

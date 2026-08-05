@@ -1,3 +1,14 @@
+import type { SpkEngine } from "./speaker-models.js";
+export type { SpkEngine } from "./speaker-models.js";
+export {
+  DEFAULT_SPK_ENGINE,
+  LEGACY_SPK_ENGINE,
+  SPK_ENGINES,
+  defaultSpkThreshold,
+  isSpkEngine,
+  spkEngineLabel,
+} from "./speaker-models.js";
+
 export type Lang = "auto" | "zh" | "en" | "ja" | "ko" | "yue";
 
 /** Local speech-recognition backend. */
@@ -223,6 +234,8 @@ export interface TranscribeArgs {
   source: AudioSource;
   output?: string;
   noSpk: boolean;
+  /** Active speaker embedding model (CAM++ / ERes2Net-large). */
+  spkEngine: SpkEngine;
   spkThreshold: number;
   noTui: boolean;
   /**

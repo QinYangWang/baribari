@@ -16,13 +16,17 @@ import {
   listInputDevices,
   transcribe,
 } from "./transcribe.js";
-import type { AsrEngine, AudioSource, Lang, Segment, TranscribeArgs, UiLang } from "./types.js";
+import type { AsrEngine, AudioSource, Lang, Segment, SpkEngine, TranscribeArgs, UiLang } from "./types.js";
 import { isFinalSegment, isPartialSegment } from "./types.js";
 import {
   DEFAULT_AI,
   DEFAULT_SHARE,
   DEFAULT_SPEAKER_TURN,
   DEFAULT_VAD,
+  LEGACY_SPK_ENGINE,
+  SPK_ENGINES,
+  defaultSpkThreshold,
+  isSpkEngine,
 } from "./types.js";
 import { createSpeakerTurnCoalescer } from "./speaker-turn.js";
 import {
@@ -224,7 +228,10 @@ function buildArgsFromSaved(
     source: SOURCES.includes(source) ? source : defaultSource(),
     output: saved.output,
     noSpk: saved.noSpk ?? false,
-    spkThreshold: saved.spkThreshold ?? 0.55,
+    spkEngine: saved.spkEngine ?? LEGACY_SPK_ENGINE,
+    spkThreshold:
+      saved.spkThreshold ??
+      defaultSpkThreshold(saved.spkEngine ?? LEGACY_SPK_ENGINE),
     noTui: false,
     recordDir: saved.recordDir
       ? normalizeRecordDir(saved.recordDir)
@@ -243,9 +250,11 @@ function printDoctor(): void {
   setUiLang(resolveUiLang({ flag: readUiLangFlag(), saved: saved.uiLang }));
   ensureConfigDir();
   const overrides = modelOverridesFromSettings();
+  const spkEngine = saved.spkEngine ?? LEGACY_SPK_ENGINE;
   const check = checkModels(overrides, {
     requireSpk: !saved.noSpk,
     asrEngine: saved.asrEngine ?? "sensevoice",
+    spkEngine,
   });
   const p = check.paths;
   const ok = (b: boolean) => (b ? "✓" : "✗");
@@ -265,6 +274,7 @@ function printDoctor(): void {
   console.log(`  uiLang      ${uiLangLabel(getUiLang())} (${getUiLang()})`);
   console.log(`  asr lang    ${saved.lang ?? "auto"}`);
   console.log(`  asr engine  ${saved.asrEngine ?? "sensevoice"}`);
+  console.log(`  spk engine  ${spkEngine}${saved.noSpk ? " (disabled)" : ""}`);
   console.log(`  source      ${saved.source ?? defaultSource()}`);
   console.log("");
   console.log("Models");
@@ -278,7 +288,11 @@ function printDoctor(): void {
   console.log(`  reazon dec  ${ok(exists(p.reazonSpeechDecoder))}  ${p.reazonSpeechDecoder}`);
   console.log(`  reazon join ${ok(exists(p.reazonSpeechJoiner))}  ${p.reazonSpeechJoiner}`);
   console.log(`  reazon tok  ${ok(exists(p.reazonSpeechTokens))}  ${p.reazonSpeechTokens}`);
-  console.log(`  speaker     ${ok(exists(p.spk))}  ${p.spk}`);
+  for (const eng of SPK_ENGINES) {
+    const f = p.spkByEngine[eng];
+    const mark = eng === spkEngine ? "*" : " ";
+    console.log(`  spk${mark} ${eng.padEnd(14)} ${ok(exists(f))}  ${f}`);
+  }
   if (check.missing.length) {
     console.log("");
     console.log("Missing:");
@@ -327,7 +341,7 @@ function printCompletion(shell: string): void {
 _${name}_completions() {
   local cur="\${COMP_WORDS[COMP_CWORD]}"
   local cmds="setup paths config devices doctor demo join session sessions resume completion help"
-  local opts="--lang --ui-lang --source --device --output --no-spk --spk-threshold --no-tui --record --record-dir --ai --no-ai --ai-translate --ai-base-url --ai-model --ai-key --share --no-share --share-port --join --vad-threshold --vad-min-speech --vad-min-silence --vad-max-speech --vad-window --list-devices --demo --help --version"
+  local opts="--lang --ui-lang --source --device --output --no-spk --spk-engine --spk-threshold --no-tui --record --record-dir --ai --no-ai --ai-translate --ai-base-url --ai-model --ai-key --share --no-share --share-port --join --vad-threshold --vad-min-speech --vad-min-silence --vad-max-speech --vad-window --list-devices --demo --help --version"
   if [[ \${COMP_CWORD} -eq 1 ]]; then
     COMPREPLY=( $(compgen -W "\${cmds} \${opts}" -- "\${cur}") )
   else
@@ -343,7 +357,7 @@ complete -F _${name}_completions ${name}
 _${name}() {
   local -a cmds opts
   cmds=(setup paths config devices doctor demo join session sessions resume completion help)
-  opts=(--lang --ui-lang --source --device --output --no-spk --spk-threshold --no-tui --record --record-dir --ai --no-ai --ai-translate --ai-base-url --ai-model --ai-key --share --no-share --share-port --join --vad-threshold --vad-min-speech --vad-min-silence --vad-max-speech --vad-window --list-devices --demo --help --version)
+  opts=(--lang --ui-lang --source --device --output --no-spk --spk-engine --spk-threshold --no-tui --record --record-dir --ai --no-ai --ai-translate --ai-base-url --ai-model --ai-key --share --no-share --share-port --join --vad-threshold --vad-min-speech --vad-min-silence --vad-max-speech --vad-window --list-devices --demo --help --version)
   _arguments \\
     '1:command:(\${cmds})' \\
     '*::options:->opts'
@@ -400,6 +414,11 @@ function addRunOptions(cmd: Command): Command {
     .option("--source <src>", `${t("cli.sourceOpt")} (${SOURCES.join("|")})`)
     .option("-o, --output <file>", t("cli.outputOpt"))
     .option("--no-spk", t("cli.noSpk"))
+    .option(
+      "--spk-engine <engine>",
+      t("cli.spkEngine"),
+      (v: string) => v,
+    )
     .option("--spk-threshold <n>", t("cli.spkThreshold"), (v) => parseFloat(v))
     .option("--no-tui", t("cli.noTui"))
     .option("--record <path>", t("cli.record"))
@@ -678,6 +697,7 @@ type RunOpts = {
   listDevices?: boolean;
   source?: string;
   output?: string;
+  spkEngine?: string;
   spk: boolean;
   spkThreshold?: number;
   tui: boolean;
@@ -736,12 +756,32 @@ async function runMain(opts: RunOpts) {
   const device = hasFlag("--device")
     ? opts.device
     : (opts.device ?? saved.device);
-  const spkThreshold = hasFlag("--spk-threshold")
-    ? (opts.spkThreshold as number)
-    : (saved.spkThreshold ?? opts.spkThreshold ?? 0.55);
-  const noSpk = hasFlag("--no-spk")
+  const spkEngineRaw = hasFlag("--spk-engine")
+    ? opts.spkEngine
+    : (saved.spkEngine ?? opts.spkEngine ?? LEGACY_SPK_ENGINE);
+  let spkEngine = (
+    isSpkEngine(spkEngineRaw) ? spkEngineRaw : LEGACY_SPK_ENGINE
+  ) as SpkEngine;
+  const savedSpkEngine = saved.spkEngine ?? LEGACY_SPK_ENGINE;
+  const thresholdForEngine = (engine: SpkEngine): number => {
+    if (hasFlag("--spk-threshold")) return opts.spkThreshold as number;
+    if (
+      saved.spkThreshold !== undefined &&
+      (engine === savedSpkEngine ||
+        Math.abs(
+          saved.spkThreshold - defaultSpkThreshold(savedSpkEngine),
+        ) >= 0.001)
+    ) {
+      return saved.spkThreshold;
+    }
+    return opts.spkThreshold ?? defaultSpkThreshold(engine);
+  };
+  let spkThreshold = thresholdForEngine(spkEngine);
+  let noSpk = hasFlag("--no-spk")
     ? opts.spk === false
-    : (saved.noSpk ?? opts.spk === false);
+    : hasFlag("--spk-engine")
+      ? false
+      : (saved.noSpk ?? opts.spk === false);
   const output = hasFlag("-o", "--output")
     ? opts.output
     : (opts.output ?? saved.output);
@@ -805,6 +845,15 @@ async function runMain(opts: RunOpts) {
     console.error(`Invalid ASR engine: ${asrEngine}`);
     process.exit(2);
   }
+  if (hasFlag("--spk-engine") && !isSpkEngine(opts.spkEngine)) {
+    console.error(
+      t("cli.invalidSpkEngine", {
+        engine: String(opts.spkEngine),
+        opts: SPK_ENGINES.join(", "),
+      }),
+    );
+    process.exit(2);
+  }
   if (!SOURCES.includes(source as AudioSource)) {
     console.error(
       t("cli.invalidSource", { source, opts: SOURCES.join(", ") }),
@@ -832,11 +881,30 @@ async function runMain(opts: RunOpts) {
   const ready = await ensureReadyForAsr({
     requireSpk: !noSpk,
     asrEngine: asrEngine as import("./types.js").AsrEngine,
+    spkEngine:
+      hasFlag("--spk-engine") || saved.spkEngine !== undefined
+        ? spkEngine
+        : undefined,
     uiLangFlag: uiLang,
   });
   if (!ready) {
     console.error(t("cli.modelsNotReady"));
     hardExit(1);
+  }
+  const refreshedSettings = loadSettings();
+  if (!hasFlag("--spk-engine") && saved.spkEngine === undefined) {
+    const configured = refreshedSettings.spkEngine;
+    if (configured) {
+      spkEngine = configured;
+      spkThreshold = thresholdForEngine(configured);
+    }
+  }
+  if (
+    !hasFlag("--no-spk") &&
+    saved.noSpk === undefined &&
+    refreshedSettings.noSpk !== undefined
+  ) {
+    noSpk = refreshedSettings.noSpk;
   }
   // Non-AI dictionary file (created once if missing)
   try {
@@ -853,6 +921,7 @@ async function runMain(opts: RunOpts) {
     source: source as AudioSource,
     output,
     noSpk,
+    spkEngine,
     spkThreshold,
     noTui: !useTui,
     recordDir,
@@ -1178,7 +1247,9 @@ async function runTui(
           id: payload.id || undefined,
           displayName: payload.displayName,
           embedding: payload.embedding,
+          embeddings: payload.embeddings,
           count: payload.count,
+          model: payload.model ?? args.spkEngine,
         });
         speakerTracker.bindGlobalId(spk, saved.id);
         speakerTracker.setDisplayName(spk, saved.displayName);
@@ -1415,6 +1486,7 @@ async function runJoin(
       uiLang: ui,
       source: "mic",
       noSpk: true,
+      spkEngine: LEGACY_SPK_ENGINE,
       spkThreshold: 0.55,
       noTui: false,
       recordDir: defaultRecordDir(),

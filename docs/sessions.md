@@ -24,28 +24,36 @@ Session IDs use the form `ses_…`. The display name is separate from the ID and
 ## CLI
 
 ```bash
-baribari session list
+baribari session list                 # or: baribari sessions
 baribari session path <id>
 baribari session rm <full-id>
-baribari resume [id]          # default demo sample
-baribari demo                 # alias
+baribari session rm ses_xxx -y
+baribari session rm ses_ab --allow-prefix
+baribari resume [id]                  # default demo sample
+baribari demo                         # alias
 ```
 
 ## Resume mode
 
-Resume mode opens a saved session instead of starting a new live meeting. Use it to browse the transcript on a timeline, play recorded audio, or run session tools.
+Resume mode opens a saved session instead of starting a new live meeting. Use it to browse the transcript on a timeline, play recorded audio, continue capture, run AI tools, or share.
 
 ![Demo session with a timeline, speaker labels, original text, and translations](/screenshots/demo-mode.png)
 
-| Area | Behavior |
-|------|----------|
-| Keys | Own set (↑↓ segments, ←→ seek, Space/p play, c continue, t/T translate, m summary|merge, e rename, h share, q quit) |
-| Audio | Prefer `ffplay`; else bundled `ffmpeg-static` + OS player; merge/chain multi-clip timeline |
-| Continue | `c` starts live capture **into the same session** (not demo) |
-| AI | Translate current/all missing; meeting summary |
-| Share | Toggle host share without quitting |
+| Key | Action |
+|-----|--------|
+| `↑` `↓` | Previous / next **segment** (moves playhead) |
+| `←` `→` | Seek **−2s / +2s** on the timeline |
+| `Space` or `p` | Play / pause (prefers `ffplay`; else bundled `ffmpeg` + OS player) |
+| `c` | **Continue** live capture into this session (not demo) |
+| `t` / `T` | Translate **current** / **all missing** (AI) |
+| `m` | Meeting **summary** (transcript focus) |
+| `m` | **Merge** speakers (speaker panel only) |
+| `s` | Settings |
+| `e` | Rename session |
+| `h` | Toggle **LAN share** (does not quit) |
+| `q` | Quit |
 
-Live-only keys (`r`, `Tab`, `1–9`) are **not** bound in resume.
+Live-only keys (`r` record, `Tab` speakers, `1–9` assign) are **not** used in resume.
 
 ## Multi-clip audio
 

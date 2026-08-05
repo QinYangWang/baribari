@@ -3,77 +3,120 @@ import { defineConfig } from "vitepress";
 // Project Pages: https://<user>.github.io/baribari/
 const base = process.env.DOCS_BASE || "/baribari/";
 
-function side(prefix: string, t: {
-  design: string;
+type SideLabels = {
+  start: string;
   overview: string;
+  install: string;
+  quickStart: string;
+  use: string;
+  live: string;
+  sessions: string;
+  speakers: string;
+  share: string;
+  configure: string;
+  configuration: string;
+  modelsAi: string;
+  tui: string;
+  reference: string;
+  cli: string;
+  files: string;
+  project: string;
   architecture: string;
   asr: string;
-  speakers: string;
-  sessions: string;
-  tui: string;
   roadmap: string;
-  ops: string;
-  pages: string;
-}) {
+  help: string;
+  troubleshooting: string;
+};
+
+type NavLabels = {
+  home: string;
+  docs: string;
+  blog: string;
+  overview: string;
+  install: string;
+  quickStart: string;
+  cli: string;
+};
+
+function side(prefix: string, t: SideLabels) {
   const p = prefix === "/" ? "" : prefix;
   return [
     {
-      text: t.design,
+      text: t.start,
       collapsed: false,
       items: [
-        { text: t.overview, link: `${p}/` },
+        { text: t.overview, link: `${p}/overview` },
+        { text: t.install, link: `${p}/install` },
+        { text: t.quickStart, link: `${p}/quick-start` },
+      ],
+    },
+    {
+      text: t.use,
+      collapsed: false,
+      items: [
+        { text: t.live, link: `${p}/live` },
+        { text: t.sessions, link: `${p}/sessions` },
+        { text: t.speakers, link: `${p}/speakers` },
+        { text: t.share, link: `${p}/share` },
+      ],
+    },
+    {
+      text: t.configure,
+      collapsed: false,
+      items: [
+        { text: t.configuration, link: `${p}/configuration` },
+        { text: t.modelsAi, link: `${p}/models-ai` },
+        { text: t.tui, link: `${p}/tui-i18n` },
+      ],
+    },
+    {
+      text: t.reference,
+      collapsed: false,
+      items: [
+        { text: t.cli, link: `${p}/cli` },
+        { text: t.files, link: `${p}/files` },
+      ],
+    },
+    {
+      text: t.project,
+      collapsed: true,
+      items: [
         { text: t.architecture, link: `${p}/architecture` },
         { text: t.asr, link: `${p}/asr-pipeline` },
-        { text: t.speakers, link: `${p}/speakers` },
-        { text: t.sessions, link: `${p}/sessions` },
-        { text: t.tui, link: `${p}/tui-i18n` },
         { text: t.roadmap, link: `${p}/roadmap` },
       ],
     },
     {
-      text: t.ops,
-      collapsed: false,
-      items: [{ text: t.pages, link: `${p}/github-pages` }],
+      text: t.help,
+      collapsed: true,
+      items: [
+        { text: t.troubleshooting, link: `${p}/troubleshooting` },
+      ],
     },
   ];
 }
 
-function nav(prefix: string, t: {
-  home: string;
-  design: string;
-  architecture: string;
-  asr: string;
-  speakers: string;
-  sessions: string;
-  tui: string;
-  roadmap: string;
-  pages: string;
-}) {
+function nav(prefix: string, t: NavLabels) {
   const p = prefix === "/" ? "" : prefix;
   return [
     { text: t.home, link: `${p}/` },
     {
-      text: t.design,
+      text: t.docs,
       items: [
-        { text: t.architecture, link: `${p}/architecture` },
-        { text: t.asr, link: `${p}/asr-pipeline` },
-        { text: t.speakers, link: `${p}/speakers` },
-        { text: t.sessions, link: `${p}/sessions` },
-        { text: t.tui, link: `${p}/tui-i18n` },
-        { text: t.roadmap, link: `${p}/roadmap` },
+        { text: t.overview, link: `${p}/overview` },
+        { text: t.install, link: `${p}/install` },
+        { text: t.quickStart, link: `${p}/quick-start` },
+        { text: t.cli, link: `${p}/cli` },
       ],
     },
-    {
-      text: "GitHub",
-      link: "https://github.com/QinYangWang/baribari",
-    },
+    { text: t.blog, link: `${p}/blog/` },
   ];
 }
 
 export default defineConfig({
   title: "baribari",
   description:
-    "Local-first meeting transcription in the terminal — design docs",
+    "Local-first meeting transcription in the terminal",
   base,
   cleanUrls: true,
   ignoreDeadLinks: true,
@@ -97,11 +140,9 @@ export default defineConfig({
     ],
   ],
   themeConfig: {
-    // Text only — no image logo
     siteTitle: "baribari",
     logo: undefined,
     socialLinks: [
-      { icon: "github", link: "https://github.com/QinYangWang/baribari" },
       { icon: "npm", link: "https://www.npmjs.com/package/baribari" },
     ],
     search: {
@@ -115,33 +156,42 @@ export default defineConfig({
       lang: "en",
       link: "/",
       title: "baribari",
-      description:
-        "Local-first meeting transcription in the terminal — design docs",
+      description: "Local-first meeting transcription in the terminal",
       themeConfig: {
         siteTitle: "baribari",
         outline: { level: [2, 3], label: "On this page" },
         nav: nav("/", {
           home: "Home",
-          design: "Design",
-          architecture: "Architecture",
-          asr: "ASR pipeline",
-          speakers: "Speakers",
-          sessions: "Sessions",
-          tui: "TUI & i18n",
-          roadmap: "Roadmap",
-          pages: "GitHub Pages",
+          docs: "Docs",
+          blog: "Blog",
+          overview: "Overview",
+          install: "Install",
+          quickStart: "Quick start",
+          cli: "CLI reference",
         }),
         sidebar: side("/", {
-          design: "Design",
-          overview: "Home",
+          start: "Start here",
+          overview: "Overview",
+          install: "Install",
+          quickStart: "Quick start",
+          use: "Use baribari",
+          live: "Live transcription",
+          sessions: "Sessions & resume",
+          speakers: "Speakers",
+          share: "LAN sharing",
+          configure: "Configure",
+          configuration: "Configuration",
+          modelsAi: "Models & AI",
+          tui: "TUI & languages",
+          reference: "Reference",
+          cli: "CLI reference",
+          files: "Files & paths",
+          project: "Project",
           architecture: "Architecture",
           asr: "ASR pipeline",
-          speakers: "Speakers",
-          sessions: "Sessions & resume",
-          tui: "TUI & i18n",
           roadmap: "Roadmap",
-          ops: "Ops",
-          pages: "GitHub Pages",
+          help: "Help",
+          troubleshooting: "Troubleshooting",
         }),
         editLink: {
           pattern:
@@ -170,32 +220,42 @@ export default defineConfig({
       lang: "zh-CN",
       link: "/zh/",
       title: "baribari",
-      description: "终端里的本地优先会议实时转写 — 设计文档",
+      description: "终端里的本地优先会议实时转写",
       themeConfig: {
         siteTitle: "baribari",
         outline: { level: [2, 3], label: "本页目录" },
         nav: nav("/zh", {
           home: "首页",
-          design: "设计",
-          architecture: "架构",
-          asr: "识别管线",
-          speakers: "说话人",
-          sessions: "会话",
-          tui: "TUI 与多语言",
-          roadmap: "路线图",
-          pages: "GitHub Pages",
+          docs: "文档",
+          blog: "博客",
+          overview: "概览",
+          install: "安装",
+          quickStart: "快速开始",
+          cli: "CLI 参考",
         }),
         sidebar: side("/zh", {
-          design: "设计",
-          overview: "首页",
+          start: "从这里开始",
+          overview: "概览",
+          install: "安装",
+          quickStart: "快速开始",
+          use: "使用 baribari",
+          live: "实时转写",
+          sessions: "会话与回放",
+          speakers: "说话人",
+          share: "局域网共享",
+          configure: "配置",
+          configuration: "配置说明",
+          modelsAi: "模型与 AI",
+          tui: "TUI 与语言",
+          reference: "参考",
+          cli: "CLI 参考",
+          files: "文件与路径",
+          project: "项目",
           architecture: "架构",
           asr: "识别管线",
-          speakers: "说话人",
-          sessions: "会话与回放",
-          tui: "TUI 与多语言",
           roadmap: "路线图",
-          ops: "运维",
-          pages: "GitHub Pages",
+          help: "帮助",
+          troubleshooting: "故障排查",
         }),
         editLink: {
           pattern:
@@ -224,32 +284,42 @@ export default defineConfig({
       lang: "ja",
       link: "/ja/",
       title: "baribari",
-      description: "ターミナルでローカル優先の会議リアルタイム文字起こし — 設計ドキュメント",
+      description: "ターミナルでローカル優先の会議リアルタイム文字起こし",
       themeConfig: {
         siteTitle: "baribari",
         outline: { level: [2, 3], label: "このページ" },
         nav: nav("/ja", {
           home: "ホーム",
-          design: "設計",
-          architecture: "アーキテクチャ",
-          asr: "ASR パイプライン",
-          speakers: "話者",
-          sessions: "セッション",
-          tui: "TUI と i18n",
-          roadmap: "ロードマップ",
-          pages: "GitHub Pages",
+          docs: "ドキュメント",
+          blog: "ブログ",
+          overview: "概要",
+          install: "インストール",
+          quickStart: "クイックスタート",
+          cli: "CLI リファレンス",
         }),
         sidebar: side("/ja", {
-          design: "設計",
-          overview: "ホーム",
+          start: "はじめる",
+          overview: "概要",
+          install: "インストール",
+          quickStart: "クイックスタート",
+          use: "baribari を使う",
+          live: "ライブ文字起こし",
+          sessions: "セッションと再開",
+          speakers: "話者",
+          share: "LAN 共有",
+          configure: "設定",
+          configuration: "設定",
+          modelsAi: "モデルと AI",
+          tui: "TUI と言語",
+          reference: "リファレンス",
+          cli: "CLI リファレンス",
+          files: "ファイルとパス",
+          project: "プロジェクト",
           architecture: "アーキテクチャ",
           asr: "ASR パイプライン",
-          speakers: "話者",
-          sessions: "セッションと再生",
-          tui: "TUI と i18n",
           roadmap: "ロードマップ",
-          ops: "運用",
-          pages: "GitHub Pages",
+          help: "ヘルプ",
+          troubleshooting: "トラブルシューティング",
         }),
         editLink: {
           pattern:

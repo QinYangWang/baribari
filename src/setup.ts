@@ -15,8 +15,17 @@ import {
   funAsrNanoRequiredFiles,
   modelPaths,
   reazonSpeechRequiredFiles,
+  spkDownloadInfo,
   type ModelPathOverrides,
+  type SpkEngine,
 } from "./paths.js";
+import {
+  DEFAULT_SPK_ENGINE,
+  LEGACY_SPK_ENGINE,
+  SPK_ENGINES,
+  spkEngineLabel,
+  spkModelInfo,
+} from "./speaker-models.js";
 import {
   loadSettings,
   modelOverridesFromSettings,
@@ -71,9 +80,20 @@ function printManualGuide(modelsDir: string): void {
     println(`   ${file.url}`);
   }
   println();
-  println(`${BOLD}${t("setup.spkOptional")}${RESET}  ${DIM}${MODEL_DOWNLOADS.spk.approx}${RESET}`);
-  println(`   ${t("setup.file")} ${MODEL_DOWNLOADS.spk.dest}`);
-  println(`   ${MODEL_DOWNLOADS.spk.url}`);
+  println(`${BOLD}${t("setup.spkOptional")}${RESET}`);
+  for (const engine of SPK_ENGINES) {
+    const info = spkModelInfo(engine);
+    const tag =
+      engine === DEFAULT_SPK_ENGINE
+        ? t("setup.spkRecommended")
+        : t("setup.spkLegacy");
+    println(
+      `   ${info.name} (${engine}) ${tag}  ${DIM}${info.approx}${RESET}`,
+    );
+    println(`   ${t("setup.file")} ${info.fileName}`);
+    println(`   ${info.url}`);
+  }
+  println(`   ${t("setup.spkNoSpkHint")}`);
   println();
   println(`${BOLD}${t("setup.pages")}${RESET}`);
   println(`   ${t("setup.asrVad")} ${MODEL_DOWNLOADS.pages.asr}`);
@@ -81,13 +101,15 @@ function printManualGuide(modelsDir: string): void {
   println();
   println(`${BOLD}${t("setup.customExample")}${RESET} (${path.join(configDir(), "config.json")})`);
   println(`${DIM}{
+  "spkEngine": "${DEFAULT_SPK_ENGINE}",
   "modelsDir": "D:/models/baribari",
   "models": {
     "vad": "D:/models/silero_vad.onnx",
     "senseVoiceDir": "D:/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17",
     "funAsrNanoDir": "D:/models/${MODEL_DOWNLOADS.funAsrNano.extractDir}",
     "reazonSpeechDir": "D:/models/${MODEL_DOWNLOADS.reazonSpeech.dir}",
-    "spk": "D:/models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx"
+    "spkEres2netLarge": "D:/models/${spkModelInfo("eres2net-large").fileName}",
+    "spkCampplus": "D:/models/${spkModelInfo("campplus").fileName}"
   }
 }${RESET}`);
   println();
@@ -349,13 +371,41 @@ export async function downloadAsrModel(
   if (missing.length) throw new Error(missing.join(", "));
 }
 
+/** Download one speaker embedding model (CAM++ or ERes2Net-large). */
+export async function downloadSpkModel(
+  engine: SpkEngine,
+  opts?: {
+    onProgress?: (percent: number) => void;
+    onRetry?: () => void;
+    quiet?: boolean;
+  },
+): Promise<void> {
+  ensureConfigDir();
+  const paths = modelPaths(modelOverridesFromSettings(), { spkEngine: engine });
+  const dest = paths.spkByEngine[engine] || paths.spk;
+  if (fs.existsSync(dest)) {
+    opts?.onProgress?.(100);
+    return;
+  }
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  const info = spkDownloadInfo(engine);
+  await downloadFile(info.url, dest, info.name, {
+    quiet: opts?.quiet !== false,
+    onProgress: opts?.onProgress,
+    onRetry: opts?.onRetry,
+  });
+  if (!fs.existsSync(dest)) throw new Error(dest);
+}
+
 export async function downloadModels(opts?: {
   skipSpk?: boolean;
   asrEngine?: AsrEngine;
   asrEngines?: AsrEngine[];
+  spkEngine?: SpkEngine;
 }): Promise<void> {
   ensureConfigDir();
-  const paths = modelPaths(modelOverridesFromSettings());
+  const spkEngine = opts?.spkEngine ?? loadSettings().spkEngine ?? DEFAULT_SPK_ENGINE;
+  const paths = modelPaths(modelOverridesFromSettings(), { spkEngine });
   const modelsDir = paths.modelsDir;
   fs.mkdirSync(modelsDir, { recursive: true });
 
@@ -390,14 +440,11 @@ export async function downloadModels(opts?: {
     }
   }
 
-  // Speaker
+  // Speaker (selected engine only; --skip-spk / --no-spk skips)
   if (!opts?.skipSpk) {
-    if (!fs.existsSync(paths.spk)) {
-      await downloadFile(
-        MODEL_DOWNLOADS.spk.url,
-        path.join(modelsDir, MODEL_DOWNLOADS.spk.dest),
-        MODEL_DOWNLOADS.spk.name,
-      );
+    const dest = paths.spkByEngine[spkEngine] || paths.spk;
+    if (!fs.existsSync(dest)) {
+      await downloadSpkModel(spkEngine, { quiet: false });
     }
   }
 
@@ -448,8 +495,11 @@ function selectedModelCheck(
   overrides: ModelPathOverrides,
   engines: AsrEngine[],
   requireSpk: boolean,
+  spkEngine?: SpkEngine,
 ) {
-  const checks = engines.map((asrEngine) => checkModels(overrides, { requireSpk, asrEngine }));
+  const checks = engines.map((asrEngine) =>
+    checkModels(overrides, { requireSpk, asrEngine, spkEngine }),
+  );
   const primary = checks[0]!;
   const missing = [...new Map(
     checks.flatMap((check) => check.missing).map((item) => [item.path, item]),
@@ -459,6 +509,52 @@ function selectedModelCheck(
     paths: primary.paths,
     missing,
   };
+}
+
+async function chooseSetupSpkEngine(
+  defaultEngine: SpkEngine,
+): Promise<{ engine: SpkEngine; skip: boolean }> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    println(`${BOLD}${t("setup.chooseSpk")}${RESET}`);
+    println(
+      `  1) ${spkEngineLabel("eres2net-large")} — ${t("setup.spkEres2netOption")}`,
+    );
+    println(
+      `  2) ${spkEngineLabel("campplus")} — ${t("setup.spkCampplusOption")}`,
+    );
+    println(`  3) ${t("setup.spkSkipOption")}`);
+    println();
+    const def = defaultEngine === "campplus" ? 2 : 1;
+    const answer = (await ask(rl, t("setup.selectSpk", { n: def })))
+      .trim()
+      .toLowerCase();
+    if (answer === "3" || answer === "skip" || answer === "none" || answer === "no") {
+      return { engine: defaultEngine, skip: true };
+    }
+    if (
+      answer === "2" ||
+      answer === "campplus" ||
+      answer === "cam++" ||
+      answer === "cam"
+    ) {
+      return { engine: "campplus", skip: false };
+    }
+    if (
+      answer === "1" ||
+      answer === "eres2net" ||
+      answer === "eres2net-large" ||
+      answer === "large"
+    ) {
+      return { engine: "eres2net-large", skip: false };
+    }
+    if (answer === "") {
+      return { engine: defaultEngine, skip: false };
+    }
+    return { engine: defaultEngine, skip: false };
+  } finally {
+    rl.close();
+  }
 }
 
 /**
@@ -550,6 +646,7 @@ export async function runSetup(opts?: {
   uiLangFlag?: string;
   skipLangPrompt?: boolean;
   asrEngine?: AsrEngine;
+  spkEngine?: SpkEngine;
 }): Promise<boolean> {
   ensureConfigDir();
 
@@ -583,14 +680,61 @@ export async function runSetup(opts?: {
     println();
   }
 
-  const saveSelectedEngine = () => {
-    if (!opts?.asrEngine && saved.asrEngine !== selectedActiveEngine) {
-      saveSettings({ asrEngine: selectedActiveEngine });
+  let skipSpk = !!opts?.skipSpk;
+  let choseNoSpk = false;
+  let selectedSpkEngine: SpkEngine =
+    opts?.spkEngine ??
+    saved.spkEngine ??
+    DEFAULT_SPK_ENGINE;
+  // Interactive: offer recommended ERes2Net-large unless skipped
+  if (
+    !opts?.skipSpk &&
+    !opts?.spkEngine &&
+    !opts?.yes &&
+    !opts?.manual &&
+    process.stdin.isTTY
+  ) {
+    const pick = await chooseSetupSpkEngine(
+      saved.spkEngine ?? DEFAULT_SPK_ENGINE,
+    );
+    selectedSpkEngine = pick.engine;
+    if (pick.skip) {
+      skipSpk = true;
+      choseNoSpk = true;
     }
+    println();
+  }
+
+  const saveSelectedEngine = () => {
+    const patch: Parameters<typeof saveSettings>[0] = {};
+    if (!opts?.asrEngine && saved.asrEngine !== selectedActiveEngine) {
+      patch.asrEngine = selectedActiveEngine;
+    }
+    if (!skipSpk && saved.spkEngine !== selectedSpkEngine) {
+      patch.spkEngine = selectedSpkEngine;
+      const previousEngine = saved.spkEngine ?? LEGACY_SPK_ENGINE;
+      if (
+        saved.spkThreshold === undefined ||
+        Math.abs(
+          saved.spkThreshold - spkModelInfo(previousEngine).defaults.threshold,
+        ) < 0.001
+      ) {
+        patch.spkThreshold = spkModelInfo(
+          selectedSpkEngine,
+        ).defaults.threshold;
+      }
+    }
+    if (choseNoSpk) patch.noSpk = true;
+    if (Object.keys(patch).length) saveSettings(patch);
   };
 
   const overrides: ModelPathOverrides = modelOverridesFromSettings();
-  const check = selectedModelCheck(overrides, engines, !opts?.skipSpk);
+  const check = selectedModelCheck(
+    overrides,
+    engines,
+    !skipSpk,
+    selectedSpkEngine,
+  );
 
   println(`${BOLD}${ACC}${t("setup.setupHeader")}${RESET}`);
   println(`${DIM}config: ${configDir()}${RESET}`);
@@ -609,7 +753,11 @@ export async function runSetup(opts?: {
           : check.paths.senseVoiceModel;
       println(`  asr (${engine}):  ${modelPath}`);
     }
-    if (!opts?.skipSpk) println(`  spk:  ${check.paths.spk}`);
+    if (!skipSpk) {
+      println(
+        `  spk (${selectedSpkEngine}):  ${check.paths.spkByEngine[selectedSpkEngine] || check.paths.spk}`,
+      );
+    }
     return true;
   }
 
@@ -643,13 +791,22 @@ export async function runSetup(opts?: {
 
   if (doDownload) {
     try {
-      await downloadModels({ skipSpk: opts?.skipSpk, asrEngines: engines });
+      await downloadModels({
+        skipSpk,
+        asrEngines: engines,
+        spkEngine: selectedSpkEngine,
+      });
     } catch (e) {
       println(`${WARN}${t("setup.autoFail", { err: e instanceof Error ? e.message : String(e) })}${RESET}`);
       println(t("setup.manualHint"));
       return false;
     }
-    const again = selectedModelCheck(overrides, engines, !opts?.skipSpk);
+    const again = selectedModelCheck(
+      overrides,
+      engines,
+      !skipSpk,
+      selectedSpkEngine,
+    );
     if (again.ok) {
       saveSelectedEngine();
       println(`${OK}${t("setup.canStart")}${RESET}`);
@@ -676,15 +833,20 @@ export async function runSetup(opts?: {
 export async function ensureReadyForAsr(opts?: {
   requireSpk?: boolean;
   asrEngine?: import("./types.js").AsrEngine;
+  spkEngine?: SpkEngine;
   autoSetup?: boolean;
   uiLangFlag?: string;
 }): Promise<boolean> {
   ensureConfigDir();
   await ensureUiLang({ flag: opts?.uiLangFlag });
+  const saved = loadSettings();
+  const configuredSpkEngine = opts?.spkEngine ?? saved.spkEngine;
+  const spkEngine = configuredSpkEngine ?? LEGACY_SPK_ENGINE;
   const overrides = modelOverridesFromSettings();
   const check = checkModels(overrides, {
     requireSpk: opts?.requireSpk !== false,
     asrEngine: opts?.asrEngine,
+    spkEngine,
   });
   if (check.ok) return true;
 
@@ -695,6 +857,7 @@ export async function ensureReadyForAsr(opts?: {
       uiLangFlag: opts?.uiLangFlag,
       skipLangPrompt: true,
       asrEngine: opts?.asrEngine,
+      spkEngine: configuredSpkEngine,
     });
     return ok;
   }
@@ -704,7 +867,9 @@ export async function ensureReadyForAsr(opts?: {
 
 export function printPaths(): void {
   ensureConfigDir();
-  const p = modelPaths(modelOverridesFromSettings());
+  const saved = loadSettings();
+  const spkEngine = saved.spkEngine ?? LEGACY_SPK_ENGINE;
+  const p = modelPaths(modelOverridesFromSettings(), { spkEngine });
   println(`configDir:       ${p.configDir}`);
   println(`config.json:     ${path.join(p.configDir, "config.json")}`);
   println(`replace.json:    ${path.join(p.configDir, "replace.json")}  # local non-AI dict`);
@@ -714,6 +879,12 @@ export function printPaths(): void {
   println(`senseVoiceTokens:${p.senseVoiceTokens}`);
   println(`funAsrNanoDir:   ${p.funAsrNanoDir}`);
   println(`reazonSpeechDir: ${p.reazonSpeechDir}`);
-  println(`spk:             ${p.spk}`);
+  println(`spkEngine:       ${spkEngine}`);
+  for (const engine of SPK_ENGINES) {
+    const f = p.spkByEngine[engine];
+    const mark = fs.existsSync(f) ? "ok" : "missing";
+    println(`spk (${engine}): ${f}  [${mark}]`);
+  }
+  println(`spk (active):    ${p.spk}`);
   println(`recordings:      ${path.join(p.configDir, "recordings")}`);
 }

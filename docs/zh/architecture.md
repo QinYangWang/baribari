@@ -13,7 +13,7 @@
 |----|------|
 | 语言 | TypeScript → Node ≥ 18 (`type: module`) |
 | CLI | `commander` |
-| ASR / VAD / 声纹 | `sherpa-onnx-node`（SenseVoice、Fun-ASR-Nano、ReazonSpeech、Silero VAD、3D-Speaker CAM++） |
+| ASR / VAD / 声纹 | `sherpa-onnx-node`（SenseVoice、Fun-ASR-Nano、ReazonSpeech、Silero VAD、3D-Speaker CAM++ / ERes2Net-large） |
 | 采集 | `node-cpal` + `bionic-audio`（麦；Windows loopback/both） |
 | 共享 | `ws` + 简易 HTTP 页 |
 | TUI | 自研 ANSI（`src/tui.ts`），非 Ink/Blessed |
@@ -44,7 +44,8 @@
 | `src/tui.ts` | 全屏直播 UI + 设置 |
 | `src/resume-tui.ts` | 会话浏览、播放、续录、AI 工具 |
 | `src/session.ts` | 路径、meta、jsonl、多段音频、删除安全 |
-| `src/speaker-tracker.ts` | 质心 ID + 多窗投票 |
+| `src/speaker-tracker.ts` | 模板库 ID + 多窗投票 + 滞后 |
+| `src/speaker-models.ts` | 声纹模型目录（路径、默认阈值） |
 | `src/speaker-library.ts` | 全局 `roster.json` |
 | `src/speaker-turn.ts` | AI 前同说话人合并 |
 | `src/postprocess.ts` | 本地词典 / 清理 |

@@ -19,6 +19,7 @@ import type {
   Lang,
   ShareConfig,
   SpeakerTurnConfig,
+  SpkEngine,
   TranslateLang,
   UiLang,
   VadConfig,
@@ -29,6 +30,8 @@ import {
   DEFAULT_SHARE,
   DEFAULT_SPEAKER_TURN,
   DEFAULT_VAD,
+  LEGACY_SPK_ENGINE,
+  isSpkEngine,
 } from "./types.js";
 import { isUiLang } from "./i18n/index.js";
 
@@ -48,6 +51,8 @@ export interface SavedSettings {
   source?: AudioSource;
   device?: string | number;
   noSpk?: boolean;
+  /** Speaker embedding model: campplus | eres2net-large */
+  spkEngine?: SpkEngine;
   spkThreshold?: number;
   output?: string;
   recordDir?: string;
@@ -190,6 +195,8 @@ function parseModels(raw: unknown): ModelPathOverrides | undefined {
     "reazonSpeechJoiner",
     "reazonSpeechTokens",
     "spk",
+    "spkCampplus",
+    "spkEres2netLarge",
   ] as const) {
     if (typeof r[k] === "string" && (r[k] as string).trim()) {
       out[k] = (r[k] as string).trim();
@@ -236,6 +243,7 @@ export function loadSettings(): SavedSettings {
       out.device = raw.device;
     }
     if (typeof raw.noSpk === "boolean") out.noSpk = raw.noSpk;
+    if (isSpkEngine(raw.spkEngine)) out.spkEngine = raw.spkEngine;
     if (
       typeof raw.spkThreshold === "number" &&
       Number.isFinite(raw.spkThreshold)
@@ -289,6 +297,8 @@ export function modelOverridesFromSettings(
     reazonSpeechJoiner: s.models?.reazonSpeechJoiner,
     reazonSpeechTokens: s.models?.reazonSpeechTokens,
     spk: s.models?.spk,
+    spkCampplus: s.models?.spkCampplus,
+    spkEres2netLarge: s.models?.spkEres2netLarge,
   };
 }
 
@@ -357,6 +367,7 @@ export function saveSettings(partial: SavedSettings): void {
   if (next.source !== undefined) clean.source = next.source;
   if (next.device !== undefined) clean.device = next.device;
   if (next.noSpk !== undefined) clean.noSpk = next.noSpk;
+  if (next.spkEngine !== undefined) clean.spkEngine = next.spkEngine;
   if (next.spkThreshold !== undefined) clean.spkThreshold = next.spkThreshold;
   if (next.output !== undefined) clean.output = next.output;
   if (next.recordDir !== undefined) {
@@ -414,6 +425,7 @@ export function snapshotFromArgs(args: {
   source: AudioSource;
   device?: string | number;
   noSpk: boolean;
+  spkEngine?: SpkEngine;
   spkThreshold: number;
   output?: string;
   recordDir?: string;
@@ -430,6 +442,7 @@ export function snapshotFromArgs(args: {
     source: args.source,
     device: args.device,
     noSpk: args.noSpk,
+    spkEngine: args.spkEngine ?? prev.spkEngine ?? LEGACY_SPK_ENGINE,
     spkThreshold: args.spkThreshold,
     output: args.output,
     recordDir: args.recordDir
