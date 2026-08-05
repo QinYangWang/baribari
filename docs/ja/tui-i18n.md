@@ -19,8 +19,8 @@
 
 SenseVoice の partial は、多くの場合「認識中…」などの状態表示であり、仮の文字起こしではありません。将来の online エンジンは、同じチャネルを使って実際の途中結果を送信できます。
 
-**設定 → Speech ASR → ASRモデル** で `←` / `→` を押すと、SenseVoice と
-Fun-ASR-Nano を切り替えられます。Fun-ASR-Nano がない場合はダウンロード前に
+**設定 → Speech ASR → ASRモデル** で `←` / `→` を押すと、SenseVoice、
+Fun-ASR-Nano、ReazonSpeech（日本語特化）を切り替えられます。選択したモデルがない場合はダウンロード前に
 確認し、その場で待つか、バックグラウンドで取得しながら文字起こしを続けるかを
 選べます。ワイド表示では右の詳細欄に取得段階と進捗が表示され、現在の VAD 区切り
 プリセット、終了無音、最大発話時間も確認できます。インストールが成功するまでは
@@ -30,7 +30,7 @@ Fun-ASR-Nano を切り替えられます。Fun-ASR-Nano がない場合はダウ
 
 `p`/`Space` · `s` · `h` · `r` · `c` · `Tab` · `1–9` · `m` · `e` · ホイール/`g` · `q` — 詳細は README。
 
-`baribari setup` を対話実行すると、SenseVoice（推奨）、Fun-ASR-Nano、または両方
+`baribari setup` を対話実行すると、SenseVoice（推奨）、Fun-ASR-Nano、ReazonSpeech、または3つすべて
 からインストール対象を選べます。無人セットアップでは `--yes` を指定すると、現在の
 認識モデルを維持したまま選択を省略します。
 

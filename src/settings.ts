@@ -63,7 +63,7 @@ export interface SavedSettings {
 }
 
 const LANGS: Lang[] = ["auto", "zh", "en", "ja", "ko", "yue"];
-const ASR_ENGINES: AsrEngine[] = ["sensevoice", "funasr-nano"];
+const ASR_ENGINES: AsrEngine[] = ["sensevoice", "funasr-nano", "reazonspeech-ja"];
 const SOURCES: AudioSource[] = ["mic", "loopback", "both"];
 const TRANSLATE: TranslateLang[] = [
   "",
@@ -184,6 +184,11 @@ function parseModels(raw: unknown): ModelPathOverrides | undefined {
     "funAsrNanoLlm",
     "funAsrNanoEmbedding",
     "funAsrNanoTokenizer",
+    "reazonSpeechDir",
+    "reazonSpeechEncoder",
+    "reazonSpeechDecoder",
+    "reazonSpeechJoiner",
+    "reazonSpeechTokens",
     "spk",
   ] as const) {
     if (typeof r[k] === "string" && (r[k] as string).trim()) {
@@ -278,6 +283,11 @@ export function modelOverridesFromSettings(
     funAsrNanoLlm: s.models?.funAsrNanoLlm,
     funAsrNanoEmbedding: s.models?.funAsrNanoEmbedding,
     funAsrNanoTokenizer: s.models?.funAsrNanoTokenizer,
+    reazonSpeechDir: s.models?.reazonSpeechDir,
+    reazonSpeechEncoder: s.models?.reazonSpeechEncoder,
+    reazonSpeechDecoder: s.models?.reazonSpeechDecoder,
+    reazonSpeechJoiner: s.models?.reazonSpeechJoiner,
+    reazonSpeechTokens: s.models?.reazonSpeechTokens,
     spk: s.models?.spk,
   };
 }

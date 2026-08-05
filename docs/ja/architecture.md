@@ -21,7 +21,7 @@
 ## データフロー
 
 ```text
-収録 → Silero VAD → SenseVoice（オフライン区間）
+収録 → Silero VAD → 選択した ASR（オフライン区間）
      → 話者 embedding / 名簿
      → 同一話者ターン結合
      → replace.json

@@ -15,7 +15,7 @@
 |-------|--------|
 | Language | TypeScript → Node ≥ 18 (`type: module`) |
 | CLI | `commander` |
-| ASR / VAD / spk | `sherpa-onnx-node` (SenseVoice, Silero VAD, 3D-Speaker CAM++) |
+| ASR / VAD / spk | `sherpa-onnx-node` (SenseVoice, Fun-ASR-Nano, ReazonSpeech, Silero VAD, 3D-Speaker CAM++) |
 | Capture | `node-cpal` + `bionic-audio` (mic; Windows loopback/both) |
 | Share | `ws` + small HTTP page |
 | TUI | Custom ANSI (`src/tui.ts`), not Ink/Blessed |
@@ -29,7 +29,7 @@
                                          │ speech segment
                                          ▼
                                   ┌──────────────┐
-                                  │  SenseVoice  │  offline decode
+                                  │ selected ASR │  offline decode
                                   └──────┬───────┘
                                          │ text + audio slice
                     ┌────────────────────┼────────────────────┐

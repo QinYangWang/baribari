@@ -14,6 +14,7 @@ import {
   ensureConfigDir,
   funAsrNanoRequiredFiles,
   modelPaths,
+  reazonSpeechRequiredFiles,
   type ModelPathOverrides,
 } from "./paths.js";
 import {
@@ -63,6 +64,13 @@ function printManualGuide(modelsDir: string): void {
   println(`   ${t("setup.funAsrNanoExtract", { dir: MODEL_DOWNLOADS.funAsrNano.extractDir })}`);
   println(`   ${MODEL_DOWNLOADS.funAsrNano.url}`);
   println();
+  println(`${BOLD}${t("setup.reazonSpeech")}${RESET}  ${DIM}${MODEL_DOWNLOADS.reazonSpeech.approx}${RESET}`);
+  println(`   ${t("setup.reazonSpeechContains")}`);
+  for (const file of MODEL_DOWNLOADS.reazonSpeech.files) {
+    println(`   ${file.name}`);
+    println(`   ${file.url}`);
+  }
+  println();
   println(`${BOLD}${t("setup.spkOptional")}${RESET}  ${DIM}${MODEL_DOWNLOADS.spk.approx}${RESET}`);
   println(`   ${t("setup.file")} ${MODEL_DOWNLOADS.spk.dest}`);
   println(`   ${MODEL_DOWNLOADS.spk.url}`);
@@ -78,6 +86,7 @@ function printManualGuide(modelsDir: string): void {
     "vad": "D:/models/silero_vad.onnx",
     "senseVoiceDir": "D:/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17",
     "funAsrNanoDir": "D:/models/${MODEL_DOWNLOADS.funAsrNano.extractDir}",
+    "reazonSpeechDir": "D:/models/${MODEL_DOWNLOADS.reazonSpeech.dir}",
     "spk": "D:/models/3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx"
   }
 }${RESET}`);
@@ -268,6 +277,47 @@ export async function downloadFunAsrNano(opts?: {
   if (missing.length) throw new Error(missing.map((item) => item.path).join(", "));
 }
 
+/** Download the compact ReazonSpeech Japanese model as four individual files. */
+export async function downloadReazonSpeech(opts?: {
+  onProgress?: (percent: number) => void;
+  onRetry?: () => void;
+  quiet?: boolean;
+}): Promise<void> {
+  ensureConfigDir();
+  const paths = modelPaths(modelOverridesFromSettings());
+  if (reazonSpeechRequiredFiles(paths).every((item) => fs.existsSync(item.path))) return;
+  fs.mkdirSync(paths.reazonSpeechDir, { recursive: true });
+
+  const totalBytes = MODEL_DOWNLOADS.reazonSpeech.files
+    .reduce((sum, file) => sum + file.bytes, 0);
+  const destinations = [
+    paths.reazonSpeechEncoder,
+    paths.reazonSpeechDecoder,
+    paths.reazonSpeechJoiner,
+    paths.reazonSpeechTokens,
+  ];
+  let completedBytes = 0;
+  for (const [index, file] of MODEL_DOWNLOADS.reazonSpeech.files.entries()) {
+    const dest = destinations[index]!;
+    if (!fs.existsSync(dest)) {
+      await downloadFile(file.url, dest, file.name, {
+        quiet: opts?.quiet !== false,
+        onRetry: opts?.onRetry,
+        onProgress: (percent) => {
+          const current = file.bytes * percent / 100;
+          opts?.onProgress?.(Math.floor((completedBytes + current) / totalBytes * 100));
+        },
+      });
+    }
+    completedBytes += file.bytes;
+    opts?.onProgress?.(Math.floor(completedBytes / totalBytes * 100));
+  }
+
+  const missing = reazonSpeechRequiredFiles(paths)
+    .filter((item) => !fs.existsSync(item.path));
+  if (missing.length) throw new Error(missing.map((item) => item.path).join(", "));
+}
+
 /** Download one ASR backend for use by the live settings dialog. */
 export async function downloadAsrModel(
   engine: import("./types.js").AsrEngine,
@@ -278,6 +328,7 @@ export async function downloadAsrModel(
   },
 ): Promise<void> {
   if (engine === "funasr-nano") return downloadFunAsrNano(opts);
+  if (engine === "reazonspeech-ja") return downloadReazonSpeech(opts);
   ensureConfigDir();
   const paths = modelPaths(modelOverridesFromSettings());
   if (fs.existsSync(paths.senseVoiceModel) && fs.existsSync(paths.senseVoiceTokens)) return;
@@ -323,6 +374,9 @@ export async function downloadModels(opts?: {
     if (engine === "funasr-nano") {
       const ready = funAsrNanoRequiredFiles(paths).every((item) => fs.existsSync(item.path));
       if (!ready) await downloadFunAsrNano({ quiet: false });
+    } else if (engine === "reazonspeech-ja") {
+      const ready = reazonSpeechRequiredFiles(paths).every((item) => fs.existsSync(item.path));
+      if (!ready) await downloadReazonSpeech({ quiet: false });
     } else if (!fs.existsSync(paths.senseVoiceModel) || !fs.existsSync(paths.senseVoiceTokens)) {
       const archive = path.join(modelsDir, MODEL_DOWNLOADS.senseVoice.dest);
       await downloadAndExtract({
@@ -355,16 +409,21 @@ function ask(rl: readline.Interface, q: string): Promise<string> {
   return new Promise((resolve) => rl.question(q, resolve));
 }
 
-type SetupModelChoice = AsrEngine | "both";
+type SetupModelChoice = AsrEngine | "all";
 
 async function chooseSetupModels(defaultEngine: AsrEngine): Promise<SetupModelChoice> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  const defaultChoice = defaultEngine === "funasr-nano" ? 2 : 1;
+  const defaultChoice = defaultEngine === "funasr-nano"
+    ? 2
+    : defaultEngine === "reazonspeech-ja"
+      ? 3
+      : 1;
   try {
     println(`${BOLD}${t("setup.chooseModels")}${RESET}`);
     println(`  1) ${t("setup.senseVoiceOption")}`);
     println(`  2) ${t("setup.funAsrNanoOption")}`);
-    println(`  3) ${t("setup.bothOption")}`);
+    println(`  3) ${t("setup.reazonSpeechOption")}`);
+    println(`  4) ${t("setup.allOption")}`);
     println();
     const answer = (await ask(rl, t("setup.selectModels", { n: defaultChoice })))
       .trim()
@@ -372,7 +431,10 @@ async function chooseSetupModels(defaultEngine: AsrEngine): Promise<SetupModelCh
     if (answer === "2" || answer === "funasr" || answer === "funasr-nano" || answer === "nano") {
       return "funasr-nano";
     }
-    if (answer === "3" || answer === "both" || answer === "all") return "both";
+    if (["3", "reazon", "reazonspeech", "reazonspeech-ja", "ja"].includes(answer)) {
+      return "reazonspeech-ja";
+    }
+    if (answer === "4" || answer === "both" || answer === "all") return "all";
     if (answer === "1" || answer === "sensevoice" || answer === "sense" || answer === "") {
       return answer === "" ? defaultEngine : "sensevoice";
     }
@@ -514,8 +576,10 @@ export async function runSetup(opts?: {
   let selectedActiveEngine = configuredEngine;
   if (!opts?.asrEngine && !opts?.yes && !opts?.manual && process.stdin.isTTY) {
     const choice = await chooseSetupModels(configuredEngine);
-    engines = choice === "both" ? ["sensevoice", "funasr-nano"] : [choice];
-    selectedActiveEngine = choice === "both" ? configuredEngine : choice;
+    engines = choice === "all"
+      ? ["sensevoice", "funasr-nano", "reazonspeech-ja"]
+      : [choice];
+    selectedActiveEngine = choice === "all" ? configuredEngine : choice;
     println();
   }
 
@@ -540,7 +604,9 @@ export async function runSetup(opts?: {
     for (const engine of engines) {
       const modelPath = engine === "funasr-nano"
         ? check.paths.funAsrNanoDir
-        : check.paths.senseVoiceModel;
+        : engine === "reazonspeech-ja"
+          ? check.paths.reazonSpeechDir
+          : check.paths.senseVoiceModel;
       println(`  asr (${engine}):  ${modelPath}`);
     }
     if (!opts?.skipSpk) println(`  spk:  ${check.paths.spk}`);
@@ -647,6 +713,7 @@ export function printPaths(): void {
   println(`senseVoiceModel: ${p.senseVoiceModel}`);
   println(`senseVoiceTokens:${p.senseVoiceTokens}`);
   println(`funAsrNanoDir:   ${p.funAsrNanoDir}`);
+  println(`reazonSpeechDir: ${p.reazonSpeechDir}`);
   println(`spk:             ${p.spk}`);
   println(`recordings:      ${path.join(p.configDir, "recordings")}`);
 }

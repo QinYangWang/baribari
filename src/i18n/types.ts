@@ -254,6 +254,7 @@ export type MessageTree = {
     keys: string;
     keysEdit: string;
     asrEngine: {
+      reazonSpeechName: string;
       applied: string;
       missingSenseVoice: string;
       downloadTitle: string;
@@ -380,6 +381,8 @@ export type MessageTree = {
     asrContains: string;
     funAsrNano: string;
     funAsrNanoExtract: string;
+    reazonSpeech: string;
+    reazonSpeechContains: string;
     spkOptional: string;
     pages: string;
     asrVad: string;
@@ -397,6 +400,7 @@ export type MessageTree = {
     vadExists: string;
     asrExists: string;
     funAsrNanoExists: string;
+    reazonSpeechExists: string;
     spkExists: string;
     downloadDone: string;
     modelsDirSet: string;
@@ -406,7 +410,8 @@ export type MessageTree = {
     chooseModels: string;
     senseVoiceOption: string;
     funAsrNanoOption: string;
-    bothOption: string;
+    reazonSpeechOption: string;
+    allOption: string;
     selectModels: string;
     promptDownload: string;
     autoFail: string;

@@ -171,6 +171,63 @@ function parseModelJson(
   return obj;
 }
 
+function hasKana(text: string): boolean {
+  return /[\u3040-\u30ff]/u.test(text);
+}
+
+function hasHan(text: string): boolean {
+  return /\p{Script=Han}/u.test(text);
+}
+
+function hasHangul(text: string): boolean {
+  return /\p{Script=Hangul}/u.test(text);
+}
+
+function hasLatin(text: string): boolean {
+  return /\p{Script=Latin}/u.test(text);
+}
+
+function hasCyrillic(text: string): boolean {
+  return /\p{Script=Cyrillic}/u.test(text);
+}
+
+function hasThai(text: string): boolean {
+  return /\p{Script=Thai}/u.test(text);
+}
+
+/**
+ * Catch a common schema failure: the provider writes the requested translation
+ * into `corrected`. Only use strong script evidence so legitimate corrections
+ * in the source language are never discarded on a guess.
+ */
+export function correctedLooksLikeTranslation(
+  raw: string,
+  corrected: string,
+  target: TranslateLang,
+): boolean {
+  if (!target || !corrected || corrected === raw) return false;
+  if (target === "zh" || target === "yue") {
+    return hasKana(raw) && !hasKana(corrected) && hasHan(corrected);
+  }
+  if (target === "ja") {
+    return !hasKana(raw) && !hasHan(raw) && (hasKana(corrected) || hasHan(corrected));
+  }
+  if (target === "ko") {
+    return !hasHangul(raw) && hasHangul(corrected);
+  }
+  if (target === "ru") {
+    return !hasCyrillic(raw) && hasCyrillic(corrected);
+  }
+  if (target === "th") {
+    return !hasThai(raw) && hasThai(corrected);
+  }
+  if (["en", "fr", "de", "es", "pt", "vi", "id"].includes(target)) {
+    return (hasKana(raw) || hasHan(raw) || hasHangul(raw)) && hasLatin(corrected) &&
+      !hasKana(corrected) && !hasHangul(corrected);
+  }
+  return false;
+}
+
 /**
  * Enhance one segment. Mutates and returns the same object.
  * No-op when AI disabled / no key / empty text.
@@ -218,6 +275,11 @@ function applyAiOutput(
   let corr = (out.corrected || "").trim();
   let tr = (out.translation || "").trim();
 
+  if (cfg.translateTo && corr && correctedLooksLikeTranslation(raw, corr, cfg.translateTo)) {
+    if (!tr) tr = corr;
+    corr = "";
+  }
+
   // Translate-only: model sometimes fills corrected instead of translation
   if (cfg.translateTo && !tr && corr && corr !== raw && !cfg.correct) {
     tr = corr;
@@ -232,7 +294,10 @@ function applyAiOutput(
   // identical to raw is useless noise
   if (corr && corr === raw) corr = "";
 
-  if (cfg.correct && corr) {
+  // While translation is enabled, keep the source line byte-for-byte stable.
+  // A provider can violate the JSON schema in ways that are impossible to
+  // distinguish for same-script language pairs (for example en → fr).
+  if (cfg.correct && corr && (!cfg.translateTo || tr)) {
     seg.corrected = corr;
   } else {
     delete seg.corrected;

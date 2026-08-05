@@ -194,6 +194,23 @@ const SPK_COLORS: RGB[] = [
 ];
 
 const LANGS: Lang[] = ["auto", "zh", "en", "ja", "ko", "yue"];
+const ASR_ENGINES: AsrEngine[] = [
+  "sensevoice",
+  "funasr-nano",
+  "reazonspeech-ja",
+];
+
+function asrEngineLabel(engine: AsrEngine): string {
+  if (engine === "funasr-nano") return "Fun-ASR-Nano";
+  if (engine === "reazonspeech-ja") return t("settings.asrEngine.reazonSpeechName");
+  return "SenseVoice";
+}
+
+function asrEngineSize(engine: AsrEngine): string {
+  if (engine === "funasr-nano") return "1 GB";
+  if (engine === "reazonspeech-ja") return "162 MB";
+  return "230 MB";
+}
 function langLabelOf(lang: string): string {
   const key = `lang.${lang}` as const;
   const v = t(key);
@@ -1209,7 +1226,7 @@ export function createTui(
         return { text: langLabel(args.lang), fg: C.accent };
       case "asrEngine":
         return {
-          text: args.asrEngine === "funasr-nano" ? "Fun-ASR-Nano" : "SenseVoice",
+          text: asrEngineLabel(args.asrEngine),
           fg: C.accent,
         };
       case "spkThr":
@@ -2904,7 +2921,10 @@ export function createTui(
         cycleLang(dir);
         break;
       case "asrEngine":
-        requestAsrEngine(args.asrEngine === "sensevoice" ? "funasr-nano" : "sensevoice");
+        requestAsrEngine(ASR_ENGINES[
+          (ASR_ENGINES.indexOf(args.asrEngine) + dir + ASR_ENGINES.length) %
+            ASR_ENGINES.length
+        ]!);
         break;
       case "spkThr":
         nudgeThreshold(dir);
@@ -2973,7 +2993,7 @@ export function createTui(
     if (adaptLowLatency) args.vad = lowLatencyVad(engine);
     persist();
     notify(t("settings.asrEngine.applied", {
-      name: engine === "funasr-nano" ? "Fun-ASR-Nano" : "SenseVoice",
+      name: asrEngineLabel(engine),
     }));
     dirty = true;
   }
@@ -2992,11 +3012,11 @@ export function createTui(
       applyAsrEngine(engine);
       return;
     }
-    const name = engine === "funasr-nano" ? "Fun-ASR-Nano" : "SenseVoice";
+    const name = asrEngineLabel(engine);
     showToast("warn", t("settings.asrEngine.downloadTitle", { name }),
       t("settings.asrEngine.downloadAsk", {
         name,
-        size: engine === "funasr-nano" ? "1 GB" : "230 MB",
+        size: asrEngineSize(engine),
       }), {
         confirm: true,
         onCancel: () => {},

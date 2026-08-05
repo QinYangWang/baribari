@@ -23,9 +23,9 @@ Open Settings with `s` to change the interface language, recognition, AI, audio,
 
 With SenseVoice, a partial event is usually a **status** such as “Recognizing…”, not provisional transcript text. A future online engine can send real partial text through the same channel.
 
-Under **Settings → Speech ASR → ASR model**, switch between SenseVoice and
-Fun-ASR-Nano with `←` / `→`. When Fun-ASR-Nano is missing, the TUI asks before
-downloading it. Choose a foreground download or continue transcribing while it
+Under **Settings → Speech ASR → ASR model**, use `←` / `→` to cycle through
+SenseVoice, Fun-ASR-Nano, and Japanese-optimized ReazonSpeech. When a model is
+missing, the TUI asks before downloading it. Choose a foreground download or continue transcribing while it
 downloads in the background. Wide layouts show its stage and progress in the
 right details panel, which also summarizes the active VAD endpoint settings.
 The current model stays active until installation succeeds.
@@ -37,7 +37,7 @@ See README for the full table. Highlights: `p`/`Space` pause, `s` settings, `h` 
 Settings groups are scrollable; many values use `←` `→`. Ordinary notice toasts auto-dismiss (~3s); download progress remains visible until it completes or fails.
 
 Running `baribari setup` interactively also asks which recognition models to
-install: SenseVoice (recommended), Fun-ASR-Nano, or both. `--yes` keeps the
+install: SenseVoice (recommended), Fun-ASR-Nano, ReazonSpeech, or all three. `--yes` keeps the
 configured model and skips this prompt for unattended setup.
 
 ## UI language vs ASR language

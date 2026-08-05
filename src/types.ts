@@ -1,7 +1,7 @@
 export type Lang = "auto" | "zh" | "en" | "ja" | "ko" | "yue";
 
 /** Local speech-recognition backend. */
-export type AsrEngine = "sensevoice" | "funasr-nano";
+export type AsrEngine = "sensevoice" | "funasr-nano" | "reazonspeech-ja";
 export const DEFAULT_ASR_ENGINE: AsrEngine = "sensevoice";
 
 /** UI display language (separate from ASR `lang`). */
@@ -512,9 +512,8 @@ export function displayText(seg: Segment): string {
   const raw = (seg.text || "").trim();
   const corr = (seg.corrected || "").trim();
   const tr = (seg.translation || "").trim();
+  if (tr) return raw;
   if (!corr) return raw;
-  // Model sometimes puts the translation into "corrected"
-  if (tr && corr === tr && corr !== raw) return raw;
   return corr;
 }
 

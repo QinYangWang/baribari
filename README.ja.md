@@ -43,7 +43,7 @@ npm i -g baribari & baribari setup --download & baribari
 | 機能 | 内容 |
 |------|------|
 | **会議向け TUI** | 話者、リアルタイム文字起こし、デバイス、録音、共有状態を一画面に表示 |
-| **ローカル音声認識** | SenseVoice と Fun-ASR-Nano を切替可能。どちらも Silero VAD とともにローカルで動作 |
+| **ローカル音声認識** | SenseVoice、Fun-ASR-Nano、日本語特化 ReazonSpeech を選択可能。すべて Silero VAD とともにローカルで動作 |
 | **話者ラベル** | 声紋で話者を区別し、グローバル名簿で頻繁に会う参加者を次回から自動照合 |
 | **任意の AI 機能** | OpenAI 互換 API を使った校正、翻訳、要約と、主要サービスの Provider プリセット |
 | **セッションの自動保存** | `resume` で再生、続行録音、翻訳、要約、再共有 |
@@ -112,7 +112,7 @@ baribari
 baribari doctor
 ```
 
-セットアップでは SenseVoice、Fun-ASR-Nano、または両方を選べます。推奨の既定は
+セットアップでは SenseVoice、Fun-ASR-Nano、ReazonSpeech、または3つすべてを選べます。推奨の既定は
 SenseVoice です。1 つだけ選んだ場合は、そのモデルが現在の認識モデルになります。
 
 ---
@@ -256,11 +256,11 @@ eval "$(baribari completion bash)"
 ## モデル
 
 既定は SenseVoice です。**設定 → Speech ASR → ASRモデル** で `←` / `→` を
-押すと Fun-ASR-Nano に切り替えられます。未インストールの場合はダウンロード
-確認（展開後約 1 GB）が表示されます。その場で待つか、バックグラウンドで取得し
+押すと SenseVoice、Fun-ASR-Nano、ReazonSpeech（日本語特化、約 162 MB）を切り替えられます。
+未インストールの場合はダウンロード確認が表示されます。その場で待つか、バックグラウンドで取得し
 ながら文字起こしを続けるかを選べます。ワイド表示では右の詳細欄に取得段階と進捗が
 表示され、成功したあとにモデルが切り替わります。
-`baribari --asr-engine funasr-nano` で直接起動することもできます。
+`baribari --asr-engine reazonspeech-ja` で日本語モデルを直接起動することもできます。
 
 ```bash
 baribari setup --download

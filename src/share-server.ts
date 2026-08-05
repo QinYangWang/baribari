@@ -101,7 +101,7 @@ function add(seg){
   const wall = seg.wallIso ? new Date(seg.wallIso).toLocaleTimeString(I18N.locale) : '';
   const range = (seg.start!=null && seg.end!=null)
     ? (fmt(seg.start)+'–'+fmt(seg.end)) : '';
-  const text = seg.corrected || seg.text || '';
+  const text = seg.display || seg.text || '';
   el.innerHTML =
     '<div class="meta"><span class="spk" style="color:'+color(seg.spk)+'">● '+spk+'</span>'
     + (wall?'<span>'+wall+'</span>':'')

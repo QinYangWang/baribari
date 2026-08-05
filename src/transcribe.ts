@@ -97,6 +97,22 @@ function buildRecognizer(
       },
     });
   }
+  if (engine === "reazonspeech-ja") {
+    return new sherpa_onnx.OfflineRecognizer({
+      featConfig: { sampleRate: SAMPLE_RATE, featureDim: 80 },
+      modelConfig: {
+        transducer: {
+          encoder: paths.reazonSpeechEncoder,
+          decoder: paths.reazonSpeechDecoder,
+          joiner: paths.reazonSpeechJoiner,
+        },
+        tokens: paths.reazonSpeechTokens,
+        numThreads: 4,
+        provider: "cpu",
+        debug: 0,
+      },
+    });
+  }
   const language = lang === "auto" ? "" : lang;
   return new sherpa_onnx.OfflineRecognizer({
     featConfig: {

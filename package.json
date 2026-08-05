@@ -1,6 +1,6 @@
 {
   "name": "baribari",
-  "version": "1.6.2",
+  "version": "1.7.0",
   "description": "Real-time meeting transcription CLI (SenseVoice + VAD + speaker ID + AI + LAN share)",
   "type": "module",
   "main": "dist/index.js",
@@ -20,6 +20,7 @@
     "typecheck": "tsc --noEmit",
     "check:i18n": "node scripts/check-i18n.mjs",
     "check:i18n:strict": "node scripts/check-i18n.mjs --strict",
+    "test:ai-guard": "tsx scripts/test-ai-translation-guard.ts",
     "precommit": "node scripts/pre-commit.mjs",
     "hooks:install": "git config core.hooksPath .githooks",
     "prepublishOnly": "npm run typecheck && npm run check:i18n && npm run build",

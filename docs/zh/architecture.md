@@ -13,7 +13,7 @@
 |----|------|
 | 语言 | TypeScript → Node ≥ 18 (`type: module`) |
 | CLI | `commander` |
-| ASR / VAD / 声纹 | `sherpa-onnx-node`（SenseVoice、Silero VAD、3D-Speaker CAM++） |
+| ASR / VAD / 声纹 | `sherpa-onnx-node`（SenseVoice、Fun-ASR-Nano、ReazonSpeech、Silero VAD、3D-Speaker CAM++） |
 | 采集 | `node-cpal` + `bionic-audio`（麦；Windows loopback/both） |
 | 共享 | `ws` + 简易 HTTP 页 |
 | TUI | 自研 ANSI（`src/tui.ts`），非 Ink/Blessed |
@@ -21,7 +21,7 @@
 ## 总体数据流
 
 ```text
-采集 → Silero VAD → SenseVoice（离线段解码）
+采集 → Silero VAD → 所选 ASR（离线段解码）
          → 说话人 embedding / 名册
          → 同说话人 turn 合并
          → replace.json 本地整理

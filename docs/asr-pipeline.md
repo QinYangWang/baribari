@@ -74,6 +74,8 @@ After turn merge, before AI:
 | Engine | Mode | In tree |
 |--------|------|---------|
 | SenseVoice | Offline + VAD (simulated streaming) | **Default** |
+| Fun-ASR-Nano | Offline + VAD; Chinese, English, Japanese | Available |
+| ReazonSpeech | Offline Zipformer transducer; Japanese optimized | Available |
 | Online zipformer | True partials | Roadmap |
 | External `--engine-cmd` | Subprocess protocol | Roadmap |
 

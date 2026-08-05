@@ -24,7 +24,7 @@ features:
     link: /ja/sessions
     linkText: セッションを見る
   - title: 音声認識はローカルで実行
-    details: SenseVoice と Silero VAD は自分の PC 上で動作するため、音声認識にクラウドへのアップロードは不要です。外部サービスを使うのは、任意の AI 機能を有効にした場合だけです。
+    details: SenseVoice、Fun-ASR-Nano、ReazonSpeech、Silero VAD は自分の PC 上で動作するため、音声認識にクラウドへのアップロードは不要です。外部サービスを使うのは、任意の AI 機能を有効にした場合だけです。
     link: /ja/asr-pipeline
     linkText: ASR を見る
   - title: 発言者をラベル付け

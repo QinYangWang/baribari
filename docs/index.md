@@ -24,7 +24,7 @@ features:
     link: /sessions
     linkText: Open sessions guide
   - title: Keep recognition local
-    details: SenseVoice and Silero VAD run on your machine, so speech recognition does not require uploading audio. A cloud service is used only when you enable and configure optional AI features.
+    details: SenseVoice, Fun-ASR-Nano, ReazonSpeech, and Silero VAD run on your machine, so speech recognition does not require uploading audio. A cloud service is used only when you enable and configure optional AI features.
     link: /asr-pipeline
     linkText: Open ASR guide
   - title: Label who said what

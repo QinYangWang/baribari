@@ -60,5 +60,7 @@ SenseVoice 使用**离线分段识别**：程序需要先等待 VAD 判定一个
 | 引擎 | 模式 | 状态 |
 |------|------|------|
 | SenseVoice | Offline + VAD 模拟流式 | **默认** |
+| Fun-ASR-Nano | Offline + VAD；中文、英文、日文 | 可用 |
+| ReazonSpeech | Offline Zipformer Transducer；日语优化 | 可用 |
 | Online zipformer | 真 partial | 路线图 |
 | `--engine-cmd` | 外部子进程 | 路线图 |

@@ -925,7 +925,11 @@ function formatDur(sec: number): string {
 }
 
 export function segmentDisplay(s: SessionSegment): string {
-  return (s.corrected || s.text || "").trim();
+  const raw = (s.text || "").trim();
+  const corrected = (s.corrected || "").trim();
+  const translation = (s.translation || "").trim();
+  if (translation) return raw;
+  return corrected || raw;
 }
 
 /** Persist AI summary into meta + summary.md under the session dir. */

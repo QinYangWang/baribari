@@ -16,7 +16,7 @@ import {
   listInputDevices,
   transcribe,
 } from "./transcribe.js";
-import type { AudioSource, Lang, Segment, TranscribeArgs, UiLang } from "./types.js";
+import type { AsrEngine, AudioSource, Lang, Segment, TranscribeArgs, UiLang } from "./types.js";
 import { isFinalSegment, isPartialSegment } from "./types.js";
 import {
   DEFAULT_AI,
@@ -89,6 +89,7 @@ const require = createRequire(import.meta.url);
 const pkg = require("../package.json") as { name: string; version: string };
 
 const LANGS: Lang[] = ["auto", "zh", "en", "ja", "ko", "yue"];
+const ASR_ENGINES: AsrEngine[] = ["sensevoice", "funasr-nano", "reazonspeech-ja"];
 const SOURCES: AudioSource[] = ["mic", "loopback", "both"];
 
 function hasFlag(...names: string[]): boolean {
@@ -273,6 +274,10 @@ function printDoctor(): void {
   console.log(`  asr tokens  ${ok(exists(p.senseVoiceTokens))}  ${p.senseVoiceTokens}`);
   console.log(`  funasr enc  ${ok(exists(p.funAsrNanoEncoderAdaptor))}  ${p.funAsrNanoEncoderAdaptor}`);
   console.log(`  funasr llm  ${ok(exists(p.funAsrNanoLlm))}  ${p.funAsrNanoLlm}`);
+  console.log(`  reazon enc  ${ok(exists(p.reazonSpeechEncoder))}  ${p.reazonSpeechEncoder}`);
+  console.log(`  reazon dec  ${ok(exists(p.reazonSpeechDecoder))}  ${p.reazonSpeechDecoder}`);
+  console.log(`  reazon join ${ok(exists(p.reazonSpeechJoiner))}  ${p.reazonSpeechJoiner}`);
+  console.log(`  reazon tok  ${ok(exists(p.reazonSpeechTokens))}  ${p.reazonSpeechTokens}`);
   console.log(`  speaker     ${ok(exists(p.spk))}  ${p.spk}`);
   if (check.missing.length) {
     console.log("");
@@ -388,7 +393,7 @@ Register-ArgumentCompleter -Native -CommandName ${name} -ScriptBlock {
 function addRunOptions(cmd: Command): Command {
   return cmd
     .option("--lang <lang>", `${t("cli.lang")}: ${LANGS.join("|")}`)
-    .option("--asr-engine <engine>", "ASR engine: sensevoice|funasr-nano")
+    .option("--asr-engine <engine>", "ASR engine: sensevoice|funasr-nano|reazonspeech-ja")
     .option("--ui-lang <lang>", t("cli.uiLang"))
     .option("--device <id>", t("cli.deviceOpt"))
     .option("--list-devices", t("cli.listDevices"))
@@ -796,7 +801,7 @@ async function runMain(opts: RunOpts) {
     );
     process.exit(2);
   }
-  if (asrEngine !== "sensevoice" && asrEngine !== "funasr-nano") {
+  if (!ASR_ENGINES.includes(asrEngine as AsrEngine)) {
     console.error(`Invalid ASR engine: ${asrEngine}`);
     process.exit(2);
   }

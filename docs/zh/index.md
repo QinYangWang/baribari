@@ -24,7 +24,7 @@ features:
     link: /zh/sessions
     linkText: 查看会话说明
   - title: 默认在本地处理语音
-    details: SenseVoice 和 Silero VAD 均在本机运行，语音识别无需上传音频。只有主动启用云端 AI 纠错、翻译或总结时，相关文本才会发送到所配置的服务。
+    details: SenseVoice、Fun-ASR-Nano、ReazonSpeech 和 Silero VAD 均在本机运行，语音识别无需上传音频。只有主动启用云端 AI 纠错、翻译或总结时，相关文本才会发送到所配置的服务。
     link: /zh/asr-pipeline
     linkText: 查看识别说明
   - title: 标注每段话的说话人

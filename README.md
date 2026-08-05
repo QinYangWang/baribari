@@ -43,7 +43,7 @@ npm i -g baribari & baribari setup --download & baribari
 | Feature | What you get |
 |---------|----------------|
 | **Meeting-first TUI** | See speakers, live transcripts, devices, recording, and sharing status in one place |
-| **Local speech recognition** | Switch between SenseVoice and Fun-ASR-Nano; both run locally through sherpa-onnx with Silero VAD |
+| **Local speech recognition** | Choose SenseVoice, Fun-ASR-Nano, or Japanese-optimized ReazonSpeech; all run locally through sherpa-onnx with Silero VAD |
 | **Speaker labels** | Voice embeddings distinguish speakers, while a global roster recognizes frequent attendees in later meetings |
 | **Optional AI** | Use an OpenAI-compatible API for correction, translation, and summaries |
 | **Saved sessions** | Reopen transcripts to play audio, continue recording, translate, summarize, or share |
@@ -111,7 +111,7 @@ baribari setup --download
 baribari
 ```
 
-Setup lets you install SenseVoice, Fun-ASR-Nano, or both. SenseVoice is the
+Setup lets you install SenseVoice, Fun-ASR-Nano, ReazonSpeech, or all three. SenseVoice is the
 recommended default; choosing one model also makes it the active ASR engine.
 
 Enable only the optional features you need:
@@ -380,18 +380,20 @@ The version check runs once in the background at startup and silently ignores ne
 ## Models
 
 SenseVoice is the default. Open **Settings → Speech ASR → ASR model** and use
-`←` / `→` to switch to Fun-ASR-Nano. If its files are not installed, baribari
-asks before downloading them (about 1 GB extracted). You can wait for it or keep
+`←` / `→` to cycle through SenseVoice, Fun-ASR-Nano, and ReazonSpeech. ReazonSpeech
+is tuned specifically for Japanese meetings and needs about 162 MB. If a model is
+not installed, baribari asks before downloading it. You can wait or keep
 transcribing while it downloads in the background; wide layouts keep the stage
 and progress visible in the right details panel. The model switches only after
 the download succeeds. You can also start directly with
-`baribari --asr-engine funasr-nano`.
+`baribari --asr-engine reazonspeech-ja`.
 
 | Component | Role | Auto-download |
 |-----------|------|----------------|
 | **Silero VAD** | Speech segmentation | `baribari setup --download` |
 | **SenseVoice** | Multilingual ASR | same |
 | **Fun-ASR-Nano** | Optional local ASR for Chinese, English, and Japanese | downloaded when selected |
+| **ReazonSpeech** | Compact Japanese-optimized Zipformer transducer | downloaded when selected |
 | **3D-Speaker CAM++** | Speaker embeddings | same (`--skip-spk` to omit) |
 
 Manual URLs and layout: see [Models (detail)](#models-detail) or run `baribari paths`.

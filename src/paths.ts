@@ -63,6 +63,8 @@ export const SENSEVOICE_DIR_NAMES = [
 ] as const;
 export const FUNASR_NANO_DIR_NAME =
   "sherpa-onnx-funasr-nano-int8-2025-12-30";
+export const REAZONSPEECH_DIR_NAME =
+  "sherpa-onnx-zipformer-ja-reazonspeech-2024-08-01";
 
 export interface ModelPathOverrides {
   /** Override root models directory. */
@@ -77,6 +79,11 @@ export interface ModelPathOverrides {
   funAsrNanoLlm?: string;
   funAsrNanoEmbedding?: string;
   funAsrNanoTokenizer?: string;
+  reazonSpeechDir?: string;
+  reazonSpeechEncoder?: string;
+  reazonSpeechDecoder?: string;
+  reazonSpeechJoiner?: string;
+  reazonSpeechTokens?: string;
   spk?: string;
 }
 
@@ -92,6 +99,11 @@ export interface ResolvedModelPaths {
   funAsrNanoLlm: string;
   funAsrNanoEmbedding: string;
   funAsrNanoTokenizer: string;
+  reazonSpeechDir: string;
+  reazonSpeechEncoder: string;
+  reazonSpeechDecoder: string;
+  reazonSpeechJoiner: string;
+  reazonSpeechTokens: string;
   spk: string;
 }
 
@@ -137,6 +149,9 @@ export function modelPaths(overrides: ModelPathOverrides = {}): ResolvedModelPat
   const funAsrNanoDir =
     resolveMaybe(overrides.funAsrNanoDir, cfg) ||
     path.join(modelsDir, FUNASR_NANO_DIR_NAME);
+  const reazonSpeechDir =
+    resolveMaybe(overrides.reazonSpeechDir, cfg) ||
+    path.join(modelsDir, REAZONSPEECH_DIR_NAME);
 
   const vad =
     resolveMaybe(overrides.vad, cfg) || path.join(modelsDir, "silero_vad.onnx");
@@ -164,6 +179,18 @@ export function modelPaths(overrides: ModelPathOverrides = {}): ResolvedModelPat
   const funAsrNanoTokenizer =
     resolveMaybe(overrides.funAsrNanoTokenizer, cfg) ||
     path.join(funAsrNanoDir, "Qwen3-0.6B");
+  const reazonSpeechEncoder =
+    resolveMaybe(overrides.reazonSpeechEncoder, cfg) ||
+    path.join(reazonSpeechDir, "encoder-epoch-99-avg-1.int8.onnx");
+  const reazonSpeechDecoder =
+    resolveMaybe(overrides.reazonSpeechDecoder, cfg) ||
+    path.join(reazonSpeechDir, "decoder-epoch-99-avg-1.onnx");
+  const reazonSpeechJoiner =
+    resolveMaybe(overrides.reazonSpeechJoiner, cfg) ||
+    path.join(reazonSpeechDir, "joiner-epoch-99-avg-1.int8.onnx");
+  const reazonSpeechTokens =
+    resolveMaybe(overrides.reazonSpeechTokens, cfg) ||
+    path.join(reazonSpeechDir, "tokens.txt");
 
   return {
     configDir: cfg,
@@ -177,8 +204,36 @@ export function modelPaths(overrides: ModelPathOverrides = {}): ResolvedModelPat
     funAsrNanoLlm,
     funAsrNanoEmbedding,
     funAsrNanoTokenizer,
+    reazonSpeechDir,
+    reazonSpeechEncoder,
+    reazonSpeechDecoder,
+    reazonSpeechJoiner,
+    reazonSpeechTokens,
     spk,
   };
+}
+
+/** Files required by the ReazonSpeech Japanese Zipformer transducer. */
+export function reazonSpeechRequiredFiles(paths: ResolvedModelPaths): Array<{
+  key: string;
+  path: string;
+  required: true;
+}> {
+  return [
+    { key: "reazonSpeechEncoder", path: paths.reazonSpeechEncoder, required: true },
+    { key: "reazonSpeechDecoder", path: paths.reazonSpeechDecoder, required: true },
+    { key: "reazonSpeechJoiner", path: paths.reazonSpeechJoiner, required: true },
+    { key: "reazonSpeechTokens", path: paths.reazonSpeechTokens, required: true },
+  ];
+}
+
+function asrRequiredFiles(paths: ResolvedModelPaths, engine: AsrEngine) {
+  if (engine === "funasr-nano") return funAsrNanoRequiredFiles(paths);
+  if (engine === "reazonspeech-ja") return reazonSpeechRequiredFiles(paths);
+  return [
+    { key: "senseVoiceModel", path: paths.senseVoiceModel, required: true as const },
+    { key: "senseVoiceTokens", path: paths.senseVoiceTokens, required: true as const },
+  ];
 }
 
 export interface ModelCheckResult {
@@ -223,12 +278,7 @@ export function checkModels(
   const requireSpk = opts?.requireSpk !== false;
   const missing: ModelCheckResult["missing"] = [];
   const asrEngine = opts?.asrEngine ?? "sensevoice";
-  const asr = asrEngine === "funasr-nano"
-    ? funAsrNanoRequiredFiles(paths)
-    : [
-        { key: "senseVoiceModel", path: paths.senseVoiceModel, required: true },
-        { key: "senseVoiceTokens", path: paths.senseVoiceTokens, required: true },
-      ];
+  const asr = asrRequiredFiles(paths, asrEngine);
   const need = [
     { key: "vad", path: paths.vad, required: true },
     ...asr,
@@ -246,9 +296,8 @@ export function assertModelsExist(
 ): void {
   const requireSpk = opts?.requireSpk !== false;
   const missing: string[] = [];
-  const asr = opts?.asrEngine === "funasr-nano"
-    ? funAsrNanoRequiredFiles(paths).map((item) => item.path)
-    : [paths.senseVoiceModel, paths.senseVoiceTokens];
+  const asr = asrRequiredFiles(paths, opts?.asrEngine ?? "sensevoice")
+    .map((item) => item.path);
   for (const p of [paths.vad, ...asr]) {
     if (!fs.existsSync(p)) missing.push(p);
   }
@@ -284,6 +333,33 @@ export const MODEL_DOWNLOADS = {
     dest: "sherpa-onnx-funasr-nano-int8-2025-12-30.tar.bz2",
     extractDir: FUNASR_NANO_DIR_NAME,
     approx: "~948 MB extracted",
+  },
+  reazonSpeech: {
+    name: "ReazonSpeech Japanese (int8/fp32)",
+    dir: REAZONSPEECH_DIR_NAME,
+    approx: "~162 MB",
+    files: [
+      {
+        name: "encoder-epoch-99-avg-1.int8.onnx",
+        url: "https://huggingface.co/reazon-research/reazonspeech-k2-v2/resolve/main/encoder-epoch-99-avg-1.int8.onnx",
+        bytes: 154_670_139,
+      },
+      {
+        name: "decoder-epoch-99-avg-1.onnx",
+        url: "https://huggingface.co/reazon-research/reazonspeech-k2-v2/resolve/main/decoder-epoch-99-avg-1.onnx",
+        bytes: 11_767_836,
+      },
+      {
+        name: "joiner-epoch-99-avg-1.int8.onnx",
+        url: "https://huggingface.co/reazon-research/reazonspeech-k2-v2/resolve/main/joiner-epoch-99-avg-1.int8.onnx",
+        bytes: 2_696_970,
+      },
+      {
+        name: "tokens.txt",
+        url: "https://huggingface.co/reazon-research/reazonspeech-k2-v2/resolve/main/tokens.txt",
+        bytes: 45_754,
+      },
+    ],
   },
   spk: {
     name: "3dspeaker CAM++ (speaker embedding)",

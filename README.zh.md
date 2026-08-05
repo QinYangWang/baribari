@@ -43,7 +43,7 @@ npm i -g baribari & baribari setup --download & baribari
 | 能力 | 说明 |
 |------|------|
 | **会议专用 TUI** | 集中显示说话人、实时转写、设备、录音和共享状态 |
-| **本地语音识别** | 可在 SenseVoice 与 Fun-ASR-Nano 之间切换，均搭配 Silero VAD 在本机运行 |
+| **本地语音识别** | 可选 SenseVoice、Fun-ASR-Nano 或日语优化的 ReazonSpeech，均搭配 Silero VAD 在本机运行 |
 | **说话人标注** | 通过声纹区分说话人；全局名册可在下次会议中自动匹配固定与会者 |
 | **可选 AI 增强** | 兼容 OpenAI API，可用于纠错、翻译和总结，并提供常用服务商预设 |
 | **自动保存会话** | 使用 `resume` 回放、续录、翻译、总结或重新共享会议 |
@@ -112,7 +112,7 @@ baribari
 baribari doctor
 ```
 
-安装时可选择 SenseVoice、Fun-ASR-Nano，或同时安装两个模型。SenseVoice 是推荐
+安装时可选择 SenseVoice、Fun-ASR-Nano、ReazonSpeech，或同时安装三个模型。SenseVoice 是推荐
 的默认选项；只选择一个模型时，它也会成为当前使用的识别模型。
 
 ---
@@ -261,10 +261,10 @@ eval "$(baribari completion bash)"
 ## 模型
 
 SenseVoice 是默认模型。在 **设置 → 语音识别 → 识别模型** 中按 `←` / `→`
-即可切换到 Fun-ASR-Nano。如果本地尚未安装，baribari 会先询问是否下载
-（解压后约 1 GB）。你可以留在下载界面等待，也可以转入后台并继续实时转写；宽屏
+可循环选择 SenseVoice、Fun-ASR-Nano 和 ReazonSpeech（日语优化，约 162 MB）。
+如果本地尚未安装，baribari 会先询问是否下载。你可以留在下载界面等待，也可以转入后台并继续实时转写；宽屏
 布局会在右侧详情栏持续显示下载阶段和进度。下载成功后才会切换模型。也可使用
-`baribari --asr-engine funasr-nano` 直接启动。
+`baribari --asr-engine reazonspeech-ja` 直接使用日语模型启动。
 
 ```bash
 baribari setup --download

@@ -42,4 +42,6 @@ OpenAI 互換 API。`--ai` / `--ai-correct` / `--ai-translate`。Provider プリ
 | | 状態 |
 |--|------|
 | SenseVoice | **既定** |
+| Fun-ASR-Nano | 中国語・英語・日本語 |
+| ReazonSpeech | 日本語特化 Zipformer Transducer |
 | Online zipformer / engine-cmd | ロードマップ |
