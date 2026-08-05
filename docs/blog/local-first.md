@@ -1,6 +1,8 @@
 ---
 title: Why local-first meeting transcription
 description: Meetings are private by default — keep speech on your machine.
+outline: false
+aside: false
 sidebar: false
 ---
 
@@ -31,6 +33,12 @@ Every live meeting is saved under a session directory you can list, resume, cont
 ## Share without cloning the stack
 
 LAN share lets colleagues follow finalized captions in a browser while **one host** runs models. Peers do not download ASR weights. The host remains the trust boundary.
+
+## Transcription is the first layer
+
+Captions solve the live moment, but a useful speech system also remembers people, preserves sessions, and lets teams reuse context. That is why the roadmap grows from reliable capture into searchable records and a self-hosted service, while translated voice and speaking practice remain explicit experiments.
+
+The terminal is the first client. The durable product boundary is the local speech engine, the session, and the event stream that other clients can safely build on.
 
 ## What we will not trade away
 

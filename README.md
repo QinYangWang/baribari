@@ -18,16 +18,16 @@
 
 <img src="./docs/public/screenshots/demo-mode.png" alt="Demo session with a timeline, speaker labels, original text, and translations" width="960">
 
-**Stay in the meeting. Keep every word.**
+**Turn every conversation into shared, lasting knowledge.**
 
-Local-first meeting transcription in the terminal — captions, speakers, sessions, optional AI, and LAN share.
+Private speech intelligence for live understanding, speaker memory, durable sessions, and self-hosted collaboration.
 
 - **Local by default** — SenseVoice, Fun-ASR-Nano, ReazonSpeech, and Silero VAD run on your machine.
 - **Who said what** — speaker embeddings label each turn; a global roster remembers frequent attendees.
 - **A session, not a text dump** — reopen a meeting to play, continue, correct, translate, summarize, or share.
 - **AI when you ask** — correction, translation, and summaries use the OpenAI-compatible provider you configure.
 - **One host, many viewers** — share finalized captions over the LAN in a browser or CLI.
-- **Made for the terminal** — one focused TUI for captions, speakers, devices, recording, and status.
+- **A foundation, not a dead end** — the same local speech layer can grow into search, headless sharing, translated voice, and learning tools.
 
 ---
 

@@ -1,12 +1,12 @@
 ---
 layout: home
 title: baribari
-titleTemplate: meeting transcription in your terminal
+titleTemplate: local speech intelligence you control
 
 hero:
   name: baribari
-  text: Stay in the meeting. Keep every word.
-  tagline: Local speech recognition, speaker labels, saved sessions, and optional AI — in one terminal-first meeting tool.
+  text: Turn every conversation into shared, lasting knowledge.
+  tagline: Private speech intelligence for live understanding, speaker memory, durable sessions, and self-hosted collaboration.
   actions:
     - theme: brand
       text: Quick start
@@ -16,28 +16,28 @@ hero:
       link: /overview
 
 features:
-  - title: Follow the meeting live
-    details: Watch captions appear as people speak and scroll back when you miss a line.
+  - title: Understand the room now
+    details: Follow dependable captions as people speak, with latency and segmentation you can tune.
     link: /live
     linkText: Live transcription
-  - title: Keep recognition local
-    details: SenseVoice, Fun-ASR-Nano, ReazonSpeech, and Silero VAD run on your machine.
+  - title: Keep control of the audio
+    details: Run SenseVoice, Fun-ASR-Nano, ReazonSpeech, and Silero VAD on hardware you control.
     link: /asr-pipeline
     linkText: ASR pipeline
-  - title: Know who said what
-    details: Voice embeddings label speakers, while a global roster remembers frequent attendees.
+  - title: Remember the people
+    details: Voice embeddings label each turn, while a global roster builds continuity across meetings.
     link: /speakers
     linkText: Speakers guide
-  - title: Return to any session
-    details: Reopen a meeting to play audio, continue recording, correct, translate, summarize, or share.
+  - title: Build a durable memory
+    details: Reopen a session to play, continue, correct, translate, summarize, and eventually search or export.
     link: /sessions
     linkText: Sessions & resume
-  - title: Share from one host
-    details: Let people on the LAN follow finalized captions in a browser without installing models.
+  - title: Share one local engine
+    details: Let people follow captions in a browser today; grow toward a self-hosted service for teams.
     link: /share
     linkText: LAN sharing
-  - title: Use the language you need
-    details: Switch the TUI among English, 中文, and 日本語 independently of recognition language.
-    link: /tui-i18n
-    linkText: TUI & languages
+  - title: Build beyond transcription
+    details: A common speech layer opens the way to translated voice, overlays, automation, and speaking practice.
+    link: /roadmap
+    linkText: Product roadmap
 ---

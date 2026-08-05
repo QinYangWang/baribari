@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Sans+JP:wght@400;500;600;700&family=IBM+Plex+Sans+SC:wght@400;500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap");
+@import url("https://fontsapi.zeoseven.com/442/main/result.css");
 
 /**
  * baribari docs — Dracula purple, restrained surfaces
@@ -65,21 +65,21 @@
   --vp-custom-block-tip-bg: rgba(80, 250, 123, 0.1);
   --vp-custom-block-tip-code-bg: rgba(80, 250, 123, 0.12);
 
-  --vp-font-family-base: "IBM Plex Sans", "IBM Plex Sans SC", "IBM Plex Sans JP",
-    "Segoe UI", system-ui, -apple-system, sans-serif;
-  --vp-font-family-mono: "IBM Plex Mono", "SF Mono", ui-monospace, Menlo,
-    Consolas, monospace;
+  --vp-font-family-base: "Maple Mono NF CN", "Maple Mono", "SF Mono",
+    "Segoe UI", "Microsoft YaHei", "Hiragino Sans", system-ui, sans-serif;
+  --vp-font-family-mono: "Maple Mono NF CN", "Maple Mono", "SF Mono",
+    ui-monospace, Menlo, Consolas, monospace;
 }
 
 html[lang="zh-CN"],
 html[lang^="zh"] {
-  --vp-font-family-base: "IBM Plex Sans SC", "IBM Plex Sans", "PingFang SC",
-    "Microsoft YaHei", sans-serif;
+  --vp-font-family-base: "Maple Mono NF CN", "Maple Mono", "PingFang SC",
+    "Microsoft YaHei", monospace;
 }
 
 html[lang="ja"] {
-  --vp-font-family-base: "IBM Plex Sans JP", "IBM Plex Sans", "Hiragino Sans",
-    "Yu Gothic", sans-serif;
+  --vp-font-family-base: "Maple Mono NF CN", "Maple Mono", "Hiragino Sans",
+    "Yu Gothic", monospace;
 }
 
 .dark {
@@ -962,7 +962,16 @@ html {
   font-weight: 500;
 }
 
-/* —— roadmap —— */
+/* —— roadmap kanban —— */
+.VPDoc:has(.roadmap-board) .content-container,
+.VPDoc:has(.bb-blog-list) .content-container {
+  max-width: 72rem !important;
+}
+
+.VPDoc:has(.bb-blog-back) .content-container {
+  max-width: 54rem !important;
+}
+
 .roadmap-hero {
   margin: 1.5rem 0 2.5rem;
   padding: clamp(1.25rem, 3vw, 2rem);
@@ -996,65 +1005,136 @@ html {
   color: var(--vp-c-text-2);
 }
 
-.roadmap-grid {
+.roadmap-board {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(15.5rem, 1fr));
   gap: 1rem;
-  margin: 1.25rem 0 2rem;
+  margin: 1.25rem 0 2.5rem;
+  padding: 0.15rem 0 0.75rem;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
 }
 
-.roadmap-card {
-  position: relative;
+.roadmap-column {
   min-width: 0;
-  padding: 1.2rem 1.25rem 1.3rem;
-  overflow: hidden;
+  padding: 0.85rem;
   border: 1px solid var(--vp-c-border);
-  border-radius: 4px;
-  background: var(--vp-c-bg-elv);
+  border-radius: 6px;
+  background: var(--vp-c-bg-alt);
+  scroll-snap-align: start;
 }
 
-.roadmap-card::before {
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: 0;
-  width: 3px;
-  background: var(--roadmap-accent, var(--vp-c-brand-1));
-  content: "";
+.roadmap-column.is-now { --roadmap-accent: var(--dracula-pink); }
+.roadmap-column.is-next { --roadmap-accent: var(--dracula-orange); }
+.roadmap-column.is-later { --roadmap-accent: var(--dracula-cyan); }
+.roadmap-column.is-lab { --roadmap-accent: var(--dracula-purple); }
+
+.roadmap-column-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+  padding: 0.1rem 0.15rem;
 }
 
-.roadmap-card.is-now {
-  --roadmap-accent: var(--dracula-pink);
-}
-.roadmap-card.is-next {
-  --roadmap-accent: var(--dracula-orange);
-}
-.roadmap-card.is-later {
-  --roadmap-accent: var(--dracula-cyan);
-}
-.roadmap-card.is-explore {
-  --roadmap-accent: var(--dracula-purple);
-}
-
-.roadmap-status {
-  color: var(--roadmap-accent);
-  font-size: 0.74rem;
+.roadmap-column-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--vp-c-text-1);
+  font-size: 0.82rem;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
-.roadmap-card h3 {
-  margin: 0.45rem 0 0.4rem;
-  border: 0;
-  color: var(--vp-c-text-1);
-  font-size: 1rem;
+.roadmap-column-title::before {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--roadmap-accent);
+  content: "";
 }
 
-.roadmap-card p {
-  margin: 0;
+.roadmap-count {
+  min-width: 1.55rem;
+  padding: 0.12rem 0.4rem;
+  border-radius: 999px;
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-3);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.roadmap-task {
+  margin: 0 0 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--vp-c-border);
+  border-radius: 4px;
+  background: var(--vp-c-bg-elv);
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--vp-c-text-1) 5%, transparent);
+}
+
+.roadmap-task:last-child {
+  margin-bottom: 0;
+}
+
+.roadmap-label {
+  display: inline-flex;
+  margin-bottom: 0.55rem;
+  padding: 0.16rem 0.42rem;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--roadmap-accent) 13%, transparent);
+  color: var(--roadmap-accent);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.roadmap-task h3 {
+  margin: 0 0 0.45rem;
+  border: 0;
+  color: var(--vp-c-text-1);
+  font-size: 0.95rem;
+  line-height: 1.35;
+}
+
+.roadmap-task p {
+  margin: 0 0 0.65rem;
   color: var(--vp-c-text-2);
-  font-size: 0.9rem;
-  line-height: 1.65;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.roadmap-task ul {
+  display: grid;
+  gap: 0.42rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.roadmap-task li {
+  position: relative;
+  margin: 0;
+  padding-inline-start: 1.15rem;
+  color: var(--vp-c-text-2);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.roadmap-task li::before {
+  position: absolute;
+  inset-block-start: 0.34em;
+  inset-inline-start: 0;
+  width: 0.58rem;
+  height: 0.58rem;
+  border: 1px solid color-mix(in srgb, var(--roadmap-accent) 70%, var(--vp-c-border));
+  border-radius: 2px;
+  content: "";
 }
 
 .roadmap-not-doing {
@@ -1182,8 +1262,10 @@ html {
 }
 
 @media (max-width: 640px) {
-  .roadmap-grid {
-    grid-template-columns: 1fr;
+  .roadmap-board {
+    grid-template-columns: repeat(4, minmax(82vw, 1fr));
+    margin-inline: -1rem;
+    padding-inline: 1rem;
   }
 
   .roadmap-hero {

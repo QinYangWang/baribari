@@ -1,142 +1,58 @@
+---
+title: ロードマップ
+description: baribari が現在、次、その後、ラボで取り組むこと
+aside: false
+---
+
 # ロードマップ
 
 <div class="roadmap-hero">
-  <span class="roadmap-eyebrow">LOCAL-FIRST · OPEN SOURCE</span>
-  <p class="roadmap-lead">baribari を、中国語・日本語・英語の会議に強い、安定したセルフホスト可能なリアルタイム音声ツールへ育てます。</p>
-  <p>このロードマップは方向性を示すもので、リリース日を約束するものではありません。機能数よりも安定性と検証可能な認識品質を優先します。</p>
-</div>
-
-## 全体像
-
-<div class="roadmap-grid">
-  <article class="roadmap-card is-now">
-    <span class="roadmap-status">現在</span>
-    <h3>長時間会議の安定性</h3>
-    <p>メモリ使用量を抑え、異常終了したセッションを復旧し、モデルや音声のエラーで TUI が停止しないようにします。</p>
-  </article>
-  <article class="roadmap-card is-next">
-    <span class="roadmap-status">次</span>
-    <h3>字幕と話者の品質</h3>
-    <p>確定字幕の遅延を減らし、速い日本語や多人数会議での話者照合を改善します。</p>
-  </article>
-  <article class="roadmap-card is-later">
-    <span class="roadmap-status">その後</span>
-    <h3>セッションと Headless</h3>
-    <p>検索、編集、書き出しを整え、1 台の端末から複数人へ文字起こしを共有します。</p>
-  </article>
-  <article class="roadmap-card is-explore">
-    <span class="roadmap-status">探索</span>
-    <h3>リアルタイム音声アプリ</h3>
-    <p>翻訳音声、字幕オーバーレイ、発話練習を、コア開発を妨げない範囲で試します。</p>
-  </article>
+  <span class="roadmap-eyebrow">ローカル優先 · オープンソース · セルフホスト</span>
+  <p class="roadmap-lead">音声の主導権を手放さず、会話を共有・再訪・活用できる理解へ変えていきます。</p>
+  <p>このボードは優先度を示すもので、リリース日を約束するものではありません。安定性と実測品質を確認してから次へ進みます。</p>
 </div>
 
 ::: tip 現在の重点
-新しいクライアントや操作方法を増やす前に、数時間の会議を継続して記録し、復旧できる状態を作ります。
+長時間会議を継続・復旧可能にし、その土台で日本語字幕と話者識別を改善します。
 :::
 
-## 1. 長時間会議を確実に完了する <Badge type="danger" text="現在" />
+<div class="roadmap-board">
+  <section class="roadmap-column is-now">
+    <header class="roadmap-column-header"><span class="roadmap-column-title">現在</span><span class="roadmap-count">2</span></header>
+    <article class="roadmap-task"><span class="roadmap-label">安定性</span><h3>止まらない会議</h3><p>モデル、音声、端末の障害から進行中の会議を守ります。</p><ul><li>録音をストリーム保存し全キューを制限</li><li>状態を原子的に書き、未完了セッションを復旧</li><li>モデル取得の再開・検証・再試行</li><li>数時間の収録と継続を負荷試験</li></ul></article>
+    <article class="roadmap-task"><span class="roadmap-label">品質</span><h3>信頼できる共通ベンチマーク</h3><p>調整や主張の前に、再現可能な測定を行います。</p><ul><li>SenseVoice、Fun-ASR-Nano、ReazonSpeech を比較</li><li>高速な日本語、話者交替、雑音、遠距離音声を収録</li><li>誤り率、確定遅延、メモリ、CPU を追跡</li></ul></article>
+  </section>
 
-**目標：** モデル、音声デバイス、端末出力の異常が発生しても、会議を継続または安全に復旧できること。
+  <section class="roadmap-column is-next">
+    <header class="roadmap-column-header"><span class="roadmap-column-title">次</span><span class="roadmap-count">2</span></header>
+    <article class="roadmap-task"><span class="roadmap-label">字幕</span><h3>発話をより早く理解する</h3><p>文を細切れにせず、信頼できる字幕までの待ち時間を短縮します。</p><ul><li>モデル別 VAD と確定処理を調整</li><li>人名・専門語のホットワード</li><li>ストリーミング下書き + オフライン確定を評価</li><li>online Zipformer の部分字幕を検証</li></ul></article>
+    <article class="roadmap-task"><span class="roadmap-label">話者</span><h3>誰が話しているか覚える</h3><p>自信のある誤認より、正直な「不確か」を優先します。</p><ul><li>複数ウィンドウの声紋投票</li><li>長い区間内の話者交替を検出</li><li>不確か・混在・分割・再照合フロー</li><li>任意の会議後 diarization</li></ul></article>
+  </section>
 
-- WAV を逐次ディスクへ書き込み、長時間録音をメモリに保持しない
-- 開いたままのセッションを復旧し、重要な状態をアトミックに保存する
-- 音声、推論、UI のキューを制限し、TUI の応答性を保つ
-- Windows のモデルダウンロードに再開、検証、破損時の再試行を追加する
-- 一時停止、継続録音、音声結合、再生位置の復旧をテストする
-- Linux と macOS の録音対応を明確にする
+  <section class="roadmap-column is-later">
+    <header class="roadmap-column-header"><span class="roadmap-column-title">その後</span><span class="roadmap-count">2</span></header>
+    <article class="roadmap-task"><span class="roadmap-label">知識</span><h3>再利用できる会議記録</h3><p>文字起こしファイルを、永続的で検索可能な文脈へ進化させます。</p><ul><li>全文検索から該当時刻へ移動</li><li>原文と訳を残した編集</li><li>SRT、VTT、Markdown、JSON 出力</li><li>一括取込と選択区間の再処理</li></ul></article>
+    <article class="roadmap-task"><span class="roadmap-label">セルフホスト</span><h3>1 つの音声エンジンを複数人で</h3><p>1 台が収録・推論し、チームはブラウザから追跡します。</p><ul><li><code>baribari serve</code> とバージョン付きイベント</li><li>カーソル再接続とメッセージ重複排除</li><li>トークン、API、Webhook、最小管理 UI</li><li>Docker、systemd、LAN 配備ガイド</li></ul></article>
+  </section>
 
-**完了の目安：** 数時間の会議でもメモリが安定し、一部の障害で保存済みデータが壊れないこと。
-
-## 2. リアルタイム字幕を改善する <Badge type="warning" text="次" />
-
-**目標：** 発話終了から信頼できる確定字幕が表示されるまでの待ち時間を短縮すること。
-
-- SenseVoice、Fun-ASR-Nano、ReazonSpeech を同じ基準で比較する
-- 速い日本語、頻繁な話者交代、遠距離音声、雑音を評価に含める
-- 初回表示、確定字幕、誤り率、リソース使用量を継続して記録する
-- VAD の終端判定と確定字幕のタイミングを調整する
-- online Zipformer による任意の partial 字幕を追加する
-- ストリーミング下書きとオフライン確定結果の 2 段構成を検証する
-- 人名、専門用語、製品名のホットワードを追加する
-
-## 3. 話者識別を改善する <Badge type="warning" text="次" />
-
-**目標：** 誤った人物へ強制的に割り当てるより、不確実であることを正しく示すこと。
-
-- ERes2Net-large、CAM++、グローバル声紋名簿の選択を改善する
-- 長い発話を複数の embedding で評価する
-- 長い VAD 区間内の話者変化点を検出する
-- `不確実` / `混在` 状態と候補表示を追加する
-- 改名、統合、分割、再照合を改善する
-- 会議後の offline diarization を任意で提供する
-
-> 重複音声には専用の分離モデルが必要です。当面は完璧な分離ではなく、誤割り当ての削減を目指します。
-
-## 4. 会議記録を使いやすくする <Badge type="info" text="その後" />
-
-**目標：** 会議結果を検索、修正、書き出しできること。
-
-- SRT、VTT、Markdown、JSON へ書き出す
-- 全文検索から該当時刻へ移動する
-- セッション名、タグ、お気に入りを追加する
-- 原文、修正文、翻訳を別々に保存する
-- 1 件または複数件の再認識・再翻訳を行う
-- 会議後に話者識別を再実行する
-- 既存の音声や動画をまとめて読み込む
-
-## 5. Headless で複数人へ共有する <Badge type="info" text="その後" />
-
-**目標：** 1 台の端末が録音と推論を担当し、他の参加者はブラウザで同じ会議を見ること。
-
-- `baribari serve` モードを追加する
-- WebSocket 字幕イベントをバージョン化する
-- 再接続、カーソルによる続きの取得、重複排除に対応する
-- 共有セッションをディスクへ保存する
-- 任意のアクセストークンと読み取り専用権限を追加する
-- Docker、systemd、LAN 配備を文書化する
-- 小さな Web 管理画面、API、Webhook を提供する
-
-ここではシンプルなセルフホストを対象とし、課金や商用 SaaS 向けの複雑なマルチテナント機能は作りません。
-
-## 6. モデルとエンジンを開放する <Badge type="info" text="その後" />
-
-**目標：** 会議、セッション、UI のロジックを書き直さずにモデルを追加できること。
-
-- ASR、翻訳、TTS、話者モデルのインターフェースを統一する
-- モデル一覧、ダウンロード、検証、バージョン管理を統一する
-- コミュニティ向けモデルアダプターのテンプレートを公開する
-- 安定した字幕イベント API を公開する
-- 性能と精度のベンチマークを回帰テストへ追加する
-
-## 実験室
-
-次の方向は有用ですが、コアのロードマップを妨げない範囲で進めます。
-
-| 方向 | 検証すること |
-| --- | --- |
-| 翻訳 → TTS → 音声出力 | 遅延、割り込み方針、エコー制御 |
-| 仮想マイク | Windows/macOS での導入と互換性 |
-| 常時表示字幕 | Tauri またはネイティブウィンドウが必要か |
-| AI 発話練習 | 音素アライメント、強勢、リズム、音高の評価 |
-| プライバシーモード | 音声を保存しない構成、ローカル AI、検証可能なデータ境界 |
-
-## 当面は行わないこと
-
-<div class="roadmap-not-doing">
-  <span>モバイルクライアント</span>
-  <span>商用 SaaS と課金</span>
-  <span>クラウドのみを既定にすること</span>
-  <span>完全なビデオ会議システム</span>
-  <span>近い将来の音声クローン</span>
-  <span>分離モデルなしの完璧な重複音声分離</span>
+  <section class="roadmap-column is-lab">
+    <header class="roadmap-column-header"><span class="roadmap-column-title">ラボ</span><span class="roadmap-count">2</span></header>
+    <article class="roadmap-task"><span class="roadmap-label">音声</span><h3>言語を越えて話す</h3><p>利用者の制御を保ったまま、翻訳を音声へ変える方法を探ります。</p><ul><li>翻訳 → TTS → 仮想マイク</li><li>遅延、中断、エコー制御を測定</li><li>近い将来の音声クローンは対象外</li></ul></article>
+    <article class="roadmap-task"><span class="roadmap-label">学習</span><h3>フィードバック付き会話練習</h3><p>ローカル音声基盤で有用なコーチングが可能か検証します。</p><ul><li>音素アラインメントと発音評価</li><li>アクセント、リズム、ピッチ、文法</li><li>任意の常時手前字幕ウィンドウ</li></ul></article>
+  </section>
 </div>
 
-## 参加方法
+## プラットフォーム基盤
 
-- `good first issue` または `help wanted` の課題から始める
-- モデル追加にはライセンス、配布元、ベンチマーク結果を添える
-- 品質問題には言語、録音環境、モデル、再現可能なサンプルを添える
-- モデル配布、CI、署名、テスト機器などの共通費用を寄付で支援する
+全カードは安定したエンジン層に依存します。ASR・話者・翻訳・TTS の共通インターフェース、検証可能なモデルカタログ、バージョン付き字幕イベント API、回帰テストに入る性能・品質ベンチマークを整備します。
 
-機能を寄付者だけに限定することはありません。寄付は保守とテストへ投入できる時間を増やします。
+## 近く予定しないもの
+
+<div class="roadmap-not-doing"><span>モバイルクライアント</span><span>商用 SaaS と課金</span><span>クラウドのみの既定</span><span>完全なビデオ会議</span><span>近い将来の音声クローン</span><span>分離モデルなしの完全な重複音声分離</span></div>
+
+## コントリビュート
+
+- 範囲の明確なカードを選び、大きな実装の前に issue を作成
+- モデルにはライセンス、入手元、ベンチマーク、再現サンプルを添付
+- 品質報告には言語、音声環境、モデル、期待結果を記載
+- 寄付はモデル配布、CI、署名、試験機材を支援し、機能は常にオープン

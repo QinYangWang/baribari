@@ -1,125 +1,127 @@
+---
+title: Roadmap
+description: What baribari is building now, next, later, and in the lab
+aside: false
+---
+
 # Roadmap
 
 <div class="roadmap-hero">
-  <span class="roadmap-eyebrow">LOCAL-FIRST · OPEN SOURCE</span>
-  <p class="roadmap-lead">Build baribari into a dependable, self-hostable real-time speech tool for Chinese, Japanese, and English meetings.</p>
-  <p>This roadmap communicates direction, not release dates. Stability and measurable recognition quality come before feature count.</p>
-</div>
-
-## At a glance
-
-<div class="roadmap-grid">
-  <article class="roadmap-card is-now">
-    <span class="roadmap-status">Now</span>
-    <h3>Long-meeting reliability</h3>
-    <p>Bound memory, recover interrupted sessions, and keep model or audio failures from freezing the TUI.</p>
-  </article>
-  <article class="roadmap-card is-next">
-    <span class="roadmap-status">Next</span>
-    <h3>Captions and speakers</h3>
-    <p>Reduce final-caption latency and improve speaker matching in fast Japanese and multi-speaker meetings.</p>
-  </article>
-  <article class="roadmap-card is-later">
-    <span class="roadmap-status">Later</span>
-    <h3>Sessions and Headless</h3>
-    <p>Add search, editing, and exports, then let one machine serve transcripts to multiple people.</p>
-  </article>
-  <article class="roadmap-card is-explore">
-    <span class="roadmap-status">Explore</span>
-    <h3>Real-time voice apps</h3>
-    <p>Experiment with translated speech, subtitle overlays, and speaking practice without blocking the core.</p>
-  </article>
+  <span class="roadmap-eyebrow">LOCAL-FIRST · OPEN SOURCE · SELF-HOSTABLE</span>
+  <p class="roadmap-lead">Turn live speech into understanding people can share, revisit, and build on — without giving up control of the audio.</p>
+  <p>This board communicates priority, not release dates. Cards move when reliability and measured quality support the next layer.</p>
 </div>
 
 ::: tip Current focus
-Make multi-hour meetings continuous and recoverable before expanding into new clients and interaction modes.
+Make multi-hour meetings continuous and recoverable, then improve Japanese captions and speaker identity on that stable foundation.
 :::
 
-## 1. Finish long meetings reliably <Badge type="danger" text="Current" />
+<div class="roadmap-board">
+  <section class="roadmap-column is-now">
+    <header class="roadmap-column-header"><span class="roadmap-column-title">Now</span><span class="roadmap-count">2</span></header>
+    <article class="roadmap-task">
+      <span class="roadmap-label">Reliability</span>
+      <h3>Meetings that do not break</h3>
+      <p>Protect an active meeting from model, audio, and terminal failures.</p>
+      <ul>
+        <li>Stream recordings to disk and bound every queue</li>
+        <li>Recover open sessions with atomic state writes</li>
+        <li>Resume and verify interrupted model downloads</li>
+        <li>Stress-test multi-hour capture and continuation</li>
+      </ul>
+    </article>
+    <article class="roadmap-task">
+      <span class="roadmap-label">Quality</span>
+      <h3>A benchmark we can trust</h3>
+      <p>Measure quality before tuning models or claiming improvements.</p>
+      <ul>
+        <li>Compare SenseVoice, Fun-ASR-Nano, and ReazonSpeech</li>
+        <li>Cover fast Japanese, turn-taking, noise, and far-field audio</li>
+        <li>Track error rate, final latency, memory, and CPU</li>
+      </ul>
+    </article>
+  </section>
 
-**Goal:** a model, audio-device, or terminal-output failure must not destroy an ongoing meeting.
+  <section class="roadmap-column is-next">
+    <header class="roadmap-column-header"><span class="roadmap-column-title">Next</span><span class="roadmap-count">2</span></header>
+    <article class="roadmap-task">
+      <span class="roadmap-label">Captions</span>
+      <h3>Understand speech sooner</h3>
+      <p>Reduce the wait for a dependable caption without fragmenting every phrase.</p>
+      <ul>
+        <li>Tune model-aware VAD and final commits</li>
+        <li>Add names and domain terms as hotwords</li>
+        <li>Evaluate streaming drafts with offline finals</li>
+        <li>Prototype online Zipformer partials</li>
+      </ul>
+    </article>
+    <article class="roadmap-task">
+      <span class="roadmap-label">Speakers</span>
+      <h3>Remember who is speaking</h3>
+      <p>Prefer an honest uncertain label over a confident wrong identity.</p>
+      <ul>
+        <li>Vote across multiple embedding windows</li>
+        <li>Detect speaker changes inside long segments</li>
+        <li>Add uncertain, mixed, split, and rematch flows</li>
+        <li>Offer optional post-meeting diarization</li>
+      </ul>
+    </article>
+  </section>
 
-- Stream WAV data to disk instead of retaining a long recording in memory
-- Recover open sessions and write critical state atomically
-- Bound audio, inference, and UI queues so the TUI remains responsive
-- Resume, verify, and retry damaged Windows model downloads
-- Test pause, continuation, audio merge, and playback-position recovery
-- Clarify capture support on Linux and macOS
+  <section class="roadmap-column is-later">
+    <header class="roadmap-column-header"><span class="roadmap-column-title">Later</span><span class="roadmap-count">2</span></header>
+    <article class="roadmap-task">
+      <span class="roadmap-label">Knowledge</span>
+      <h3>Meeting records people reuse</h3>
+      <p>Move from a transcript file to a durable, searchable source of context.</p>
+      <ul>
+        <li>Search and jump to the matching moment</li>
+        <li>Edit without losing source text or translation</li>
+        <li>Export SRT, VTT, Markdown, and JSON</li>
+        <li>Batch import and re-run selected segments</li>
+      </ul>
+    </article>
+    <article class="roadmap-task">
+      <span class="roadmap-label">Self-hosting</span>
+      <h3>One speech engine, many people</h3>
+      <p>Let one machine capture and infer while teams follow from a browser.</p>
+      <ul>
+        <li>Add <code>baribari serve</code> and a versioned event protocol</li>
+        <li>Reconnect with cursors and message deduplication</li>
+        <li>Add access tokens, API, webhooks, and a small admin UI</li>
+        <li>Document Docker, systemd, and LAN deployment</li>
+      </ul>
+    </article>
+  </section>
 
-**Done when:** memory remains stable over multi-hour meetings and a component failure does not corrupt saved work.
+  <section class="roadmap-column is-lab">
+    <header class="roadmap-column-header"><span class="roadmap-column-title">Lab</span><span class="roadmap-count">2</span></header>
+    <article class="roadmap-task">
+      <span class="roadmap-label">Voice</span>
+      <h3>Speak across languages</h3>
+      <p>Explore translation that becomes audio while preserving user control.</p>
+      <ul>
+        <li>Translation → TTS → virtual microphone</li>
+        <li>Measure latency, interruption, and echo control</li>
+        <li>Keep voice cloning out of the near-term scope</li>
+      </ul>
+    </article>
+    <article class="roadmap-task">
+      <span class="roadmap-label">Learning</span>
+      <h3>Practice speaking with feedback</h3>
+      <p>Test whether local speech infrastructure can support useful coaching.</p>
+      <ul>
+        <li>Phoneme alignment and pronunciation feedback</li>
+        <li>Stress, rhythm, pitch, and grammar coaching</li>
+        <li>Optional always-on-top caption window</li>
+      </ul>
+    </article>
+  </section>
+</div>
 
-## 2. Improve live-caption quality <Badge type="warning" text="Next" />
+## Platform foundation
 
-**Goal:** shorten the delay between finishing a phrase and seeing a dependable final caption.
-
-- Benchmark SenseVoice, Fun-ASR-Nano, and ReazonSpeech through one harness
-- Include fast Japanese, speaker turns, far-field audio, and noisy samples
-- Track first-token latency, final-caption latency, error rate, and resource use
-- Tune VAD endpoints and final-caption commits
-- Add optional online Zipformer partial captions
-- Evaluate a streaming-draft plus offline-final two-pass pipeline
-- Add hotwords for names, terms, and product vocabulary
-
-## 3. Improve speaker identification <Badge type="warning" text="Next" />
-
-**Goal:** prefer an uncertain label over confidently assigning speech to the wrong person.
-
-- Refine ERes2Net-large, CAM++, and global voice-roster selection
-- Use multi-window embedding votes for longer turns
-- Detect speaker change points inside long VAD segments
-- Add `uncertain` / `mixed` states and candidate matches
-- Improve rename, merge, split, and rematch workflows
-- Offer optional post-meeting offline diarization
-
-> Overlapping speech needs a dedicated separation model. The near-term goal is fewer false assignments, not perfect overlap separation.
-
-## 4. Make meeting records useful <Badge type="info" text="Later" />
-
-**Goal:** people can find, correct, and take away the result of a meeting.
-
-- Export SRT, VTT, Markdown, and JSON
-- Search full text and jump to the matching time
-- Add session names, tags, and favorites
-- Store the original, edited text, and translation separately
-- Re-run recognition or translation for one or many segments
-- Re-run speaker identification after a meeting
-- Import existing audio and video in batches
-
-## 5. Share through a Headless service <Badge type="info" text="Later" />
-
-**Goal:** one machine captures and runs inference while other people watch the same meeting in a browser.
-
-- Add a `baribari serve` mode
-- Version the WebSocket transcript event protocol
-- Support reconnect cursors and message deduplication
-- Persist shared sessions to disk
-- Add optional access tokens and read-only access
-- Document Docker, systemd, and LAN deployment
-- Provide a small web admin, API, and webhooks
-
-This stage targets straightforward self-hosting, not billing or a commercial multi-tenant SaaS.
-
-## 6. Open the model and engine layer <Badge type="info" text="Later" />
-
-**Goal:** add a model without rewriting meeting, session, or UI logic.
-
-- Unify ASR, translation, TTS, and speaker-model interfaces
-- Unify model catalogs, downloads, verification, and versions
-- Publish a community model-adapter template
-- Expose a stable transcript event API
-- Add performance and accuracy benchmarks to regression testing
-
-## Lab
-
-These ideas are useful, but they do not block the core roadmap:
-
-| Direction | What to validate |
-| --- | --- |
-| Translation → TTS → audio output | Latency, interruption policy, and echo control |
-| Virtual microphone | Windows/macOS installation and compatibility |
-| Always-on-top captions | Whether Tauri or a native window is justified |
-| AI speaking practice | Phoneme alignment, stress, rhythm, and pitch feedback |
-| Privacy mode | No audio at rest, local-only AI, and verifiable data boundaries |
+Every card depends on a stable engine layer: common interfaces for ASR, speaker models, translation, and TTS; one model catalog with verified downloads; a versioned transcript event API; and benchmarks in regression testing.
 
 ## Not planned soon
 
@@ -134,9 +136,7 @@ These ideas are useful, but they do not block the core roadmap:
 
 ## Contributing
 
-- Start with issues labeled `good first issue` or `help wanted`
-- Include the license, source URL, and benchmark results with a model contribution
-- Include the language, audio environment, model, and a reproducible sample in quality reports
-- Donate toward shared costs such as model hosting, CI, signing, and test hardware
-
-Features will not be locked behind donations. Donations fund additional maintenance and testing capacity.
+- Pick a bounded card and open an issue before a large implementation
+- Include model license, source, benchmark data, and a reproducible sample
+- Report the language, audio environment, model, and expected result with quality issues
+- Donations support model hosting, CI, signing, and shared test hardware; features remain open

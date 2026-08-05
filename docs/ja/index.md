@@ -1,12 +1,12 @@
 ---
 layout: home
 title: baribari
-titleTemplate: ターミナルで会議を文字起こし
+titleTemplate: 自分で管理できるローカル音声知能
 
 hero:
   name: baribari
-  text: 会議に集中。すべての言葉を残す。
-  tagline: ローカル音声認識、話者ラベル、セッション保存、任意の AI を、一つの会議向けターミナルツールにまとめます。
+  text: 会話を、共有できる持続的な知識へ。
+  tagline: リアルタイム理解、話者の記憶、永続セッション、セルフホスト連携のためのローカル音声知能。
   actions:
     - theme: brand
       text: クイックスタート
@@ -16,28 +16,28 @@ hero:
       link: /ja/overview
 
 features:
-  - title: 会議を字幕で追う
-    details: 発話に合わせて字幕を表示し、聞き逃した内容は上へ戻って確認できます。
+  - title: その場で理解する
+    details: 信頼できる字幕を追い、場面に合わせて遅延と区切りを調整できます。
     link: /ja/live
     linkText: ライブ文字起こし
-  - title: 音声認識をローカルに保つ
-    details: SenseVoice、Fun-ASR-Nano、ReazonSpeech、Silero VAD は端末上で動作します。
+  - title: 音声を自分で管理する
+    details: SenseVoice、Fun-ASR-Nano、ReazonSpeech、Silero VAD を自分の端末で動かします。
     link: /ja/asr-pipeline
     linkText: ASR パイプライン
-  - title: 誰が何を話したか分かる
-    details: 声紋で発言者をラベル付けし、グローバル名簿が頻繁に会う人を記憶します。
+  - title: 参加者を覚える
+    details: 声紋で発言をラベル付けし、グローバル名簿が会議をまたいで話者を記憶します。
     link: /ja/speakers
     linkText: 話者ガイド
-  - title: いつでもセッションへ戻る
-    details: 会議を開き直して、再生、続行、修正、翻訳、要約、共有ができます。
+  - title: 会議の記憶を残す
+    details: 再生、続行、修正、翻訳、要約に加え、将来は検索や出力へつなげます。
     link: /ja/sessions
     linkText: セッションと再開
-  - title: 1 台のホストから共有
-    details: LAN 上の参加者はモデルを追加せず、ブラウザで確定字幕を確認できます。
+  - title: 1 つのローカルエンジンを共有
+    details: 今はブラウザ字幕、将来はチーム向けセルフホストサービスへ拡張します。
     link: /ja/share
     linkText: LAN 共有
-  - title: 必要な表示言語を選ぶ
-    details: English、中文、日本語の表示を認識言語とは独立して切り替えられます。
-    link: /ja/tui-i18n
-    linkText: TUI と言語
+  - title: 文字起こしの先へ
+    details: 共通音声基盤から翻訳音声、オーバーレイ、自動化、会話練習へ広げます。
+    link: /ja/roadmap
+    linkText: 製品ロードマップ
 ---

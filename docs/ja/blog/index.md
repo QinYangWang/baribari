@@ -1,13 +1,14 @@
 ---
 title: ブログ
-description: ローカル優先の会議文字起こしについてのノート
+description: ローカル音声知能、プライバシー、製品方向についてのノート
 outline: false
+aside: false
 sidebar: false
 ---
 
 # ブログ
 
-baribari のプロダクト判断と設計メモ。
+ローカル音声知能、プライバシー、文字起こしの先へ進む製品方向についてのノートです。
 
 <ul class="bb-blog-list">
   <li class="bb-blog-item">

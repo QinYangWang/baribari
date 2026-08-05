@@ -1,13 +1,14 @@
 ---
 title: 博客
-description: 关于本地优先会议转写的笔记
+description: 关于本地语音智能、隐私与产品方向的笔记
 outline: false
+aside: false
 sidebar: false
 ---
 
 # 博客
 
-baribari 背后的产品选择与设计说明。
+关于本地语音智能、隐私，以及如何从转写走向持久会议知识的产品笔记。
 
 <ul class="bb-blog-list">
   <li class="bb-blog-item">

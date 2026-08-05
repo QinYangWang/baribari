@@ -1,6 +1,8 @@
 # Overview
 
-baribari is a **local-first meeting transcription CLI**. It listens on your machine, labels speakers, saves each meeting as a session you can reopen, and optionally corrects, translates, or summarizes with an OpenAI-compatible API you choose.
+baribari is a **local speech workspace** that starts with meetings. Today it listens on your machine, labels speakers, and saves a session you can reopen. The same foundation is being shaped for searchable meeting knowledge, headless team sharing, translated voice, and speaking practice.
+
+The product promise is simple: **understand the conversation now, keep its context useful later, and retain control of the audio throughout.**
 
 ## What you get
 
@@ -11,7 +13,18 @@ baribari is a **local-first meeting transcription CLI**. It listens on your mach
 | **Sessions** | Reopen a meeting to play, continue, correct, translate, summarize, or share |
 | **Optional AI** | Correction, translation, and summaries only when you configure a provider |
 | **LAN share** | One host streams finalized captions; peers watch in a browser or CLI |
-| **Terminal UI** | One focused TUI for captions, speakers, devices, recording, and status |
+| **Focused client** | One TUI for captions, speakers, devices, recording, and status |
+
+## Where it is going
+
+| Layer | Direction |
+|-------|-----------|
+| **Understand now** | Lower-latency captions, stronger Japanese recognition, honest speaker confidence |
+| **Remember later** | Search, editing, exports, reprocessing, and durable meeting context |
+| **Share safely** | One self-hosted engine serving browsers, APIs, and automations |
+| **Act through speech** | Experiments in translated voice, overlays, and pronunciation coaching |
+
+The [roadmap](./roadmap) separates committed priorities from experiments so future direction does not read as a promise that every feature exists today.
 
 ## How it fits together
 

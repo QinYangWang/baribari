@@ -116,7 +116,7 @@ function nav(prefix: string, t: NavLabels) {
 export default defineConfig({
   title: "baribari",
   description:
-    "Local-first meeting transcription in the terminal",
+    "Local speech intelligence for live understanding and lasting knowledge",
   base,
   cleanUrls: true,
   ignoreDeadLinks: true,
@@ -135,7 +135,7 @@ export default defineConfig({
       {
         property: "og:description",
         content:
-          "Real-time meeting transcription CLI — local ASR, speakers, sessions, AI, LAN share.",
+          "Private speech intelligence for live understanding, speaker memory, durable sessions, and self-hosted collaboration.",
       },
     ],
   ],
@@ -156,7 +156,7 @@ export default defineConfig({
       lang: "en",
       link: "/",
       title: "baribari",
-      description: "Local-first meeting transcription in the terminal",
+      description: "Local speech intelligence for live understanding and lasting knowledge",
       themeConfig: {
         siteTitle: "baribari",
         outline: { level: [2, 3], label: "On this page" },
@@ -220,7 +220,7 @@ export default defineConfig({
       lang: "zh-CN",
       link: "/zh/",
       title: "baribari",
-      description: "终端里的本地优先会议实时转写",
+      description: "面向实时理解与持久知识的本地语音智能",
       themeConfig: {
         siteTitle: "baribari",
         outline: { level: [2, 3], label: "本页目录" },
@@ -284,7 +284,7 @@ export default defineConfig({
       lang: "ja",
       link: "/ja/",
       title: "baribari",
-      description: "ターミナルでローカル優先の会議リアルタイム文字起こし",
+      description: "リアルタイム理解と持続的な知識のためのローカル音声知能",
       themeConfig: {
         siteTitle: "baribari",
         outline: { level: [2, 3], label: "このページ" },

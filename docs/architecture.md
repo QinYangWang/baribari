@@ -2,12 +2,15 @@
 
 > Product overview: [Home](./). This page is the engineering map.
 
-## Goals
+## Product boundary
 
-- **Local-first** speech-to-text for meetings (no cloud required for ASR).
-- A terminal interface designed for meetings, with speakers, transcripts, and device and sharing status in one place.
-- Persistent sessions stored under the user configuration directory, with optional LAN sharing.
-- Optional OpenAI-compatible correction, translation, and summarization that never overwrite the original ASR text.
+- **Own the input:** local ASR is the default; cloud AI is explicit and optional.
+- **Understand the live moment:** captions, speaker identity, devices, and sharing stay in one coherent client.
+- **Preserve durable context:** a meeting is a reopenable session, not disposable terminal output.
+- **Open the output:** sessions and versioned transcript events can support search, headless sharing, automation, and future voice applications.
+- **Keep provenance:** correction and translation never overwrite the original ASR text.
+
+The TUI is the first client, not the architectural boundary. The long-term boundary is the local speech engine plus durable session and event contracts described in the [roadmap](./roadmap).
 
 ## Runtime stack
 

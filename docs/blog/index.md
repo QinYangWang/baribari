@@ -1,13 +1,14 @@
 ---
 title: Blog
-description: Notes on local-first meeting transcription
+description: Notes on local speech intelligence, privacy, and product direction
 outline: false
+aside: false
 sidebar: false
 ---
 
 # Blog
 
-Product notes and design decisions behind baribari.
+Product notes on local speech intelligence, privacy, and the path beyond transcription.
 
 <ul class="bb-blog-list">
   <li class="bb-blog-item">
