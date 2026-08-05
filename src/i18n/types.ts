@@ -41,6 +41,7 @@ export type MessageTree = {
     paused: string;
     pausedHint: string;
     stopping: string;
+    updateAvailable: string;
     aiOn: string;
     aiOnModel: string;
     aiMissingKey: string;
@@ -214,6 +215,7 @@ export type MessageTree = {
     };
     items: {
       uiLang: { label: string; help: string };
+      asrEngine: { label: string; help: string };
       lang: { label: string; help: string };
       spkThr: { label: string; help: string };
       aiEn: { label: string; help: string };
@@ -237,10 +239,20 @@ export type MessageTree = {
     };
     keys: string;
     keysEdit: string;
+    asrEngine: {
+      applied: string;
+      missingSenseVoice: string;
+      downloadTitle: string;
+      downloadAsk: string;
+      downloading: string;
+      extracting: string;
+      downloadFailed: string;
+    };
     /** VAD preset labels (←→ in settings). */
     vadPreset: {
       balanced: string;
       meeting: string;
+      lowLatency: string;
       smooth: string;
       aggressive: string;
       custom: string;

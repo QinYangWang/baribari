@@ -28,6 +28,7 @@ import {
 } from "./audio-capture.js";
 import type {
   AudioSource,
+  AsrEngine,
   EmitFn,
   Lang,
   StatusFn,
@@ -73,9 +74,29 @@ interface CircularBuffer {
 }
 
 function buildRecognizer(
+  engine: AsrEngine,
   lang: Lang,
   paths: ReturnType<typeof modelPaths>,
 ): OfflineRecognizer {
+  if (engine === "funasr-nano") {
+    return new sherpa_onnx.OfflineRecognizer({
+      featConfig: { sampleRate: SAMPLE_RATE, featureDim: 80 },
+      modelConfig: {
+        funasrNano: {
+          encoderAdaptor: paths.funAsrNanoEncoderAdaptor,
+          llm: paths.funAsrNanoLlm,
+          embedding: paths.funAsrNanoEmbedding,
+          tokenizer: paths.funAsrNanoTokenizer,
+          language: lang === "auto" ? "" : lang,
+          itn: 1,
+        },
+        tokens: "",
+        numThreads: 2,
+        provider: "cpu",
+        debug: 0,
+      },
+    });
+  }
   const language = lang === "auto" ? "" : lang;
   return new sherpa_onnx.OfflineRecognizer({
     featConfig: {
@@ -147,11 +168,12 @@ export async function transcribe(
   onStatus: StatusFn = () => {},
 ): Promise<void> {
   const paths = modelPaths(modelOverridesFromSettings());
-  assertModelsExist(paths, { requireSpk: !args.noSpk });
+  assertModelsExist(paths, { requireSpk: !args.noSpk, asrEngine: args.asrEngine });
 
   onStatus(t("status.loadingModels"));
-  let recognizer = buildRecognizer(args.lang, paths);
+  let recognizer = buildRecognizer(args.asrEngine, args.lang, paths);
   let currentLang: Lang = args.lang;
+  let currentAsrEngine: AsrEngine = args.asrEngine;
   let vad = buildVad(paths, args.vad);
   let vadFp = vadFingerprint(args.vad);
 
@@ -250,10 +272,12 @@ export async function transcribe(
   };
 
   const flushSegment = (audio: Float32Array, segStartSample: number) => {
-    if (args.lang !== currentLang) {
+    if (args.lang !== currentLang || args.asrEngine !== currentAsrEngine) {
       onStatus(t("status.reloadLang"));
-      recognizer = buildRecognizer(args.lang, paths);
+      assertModelsExist(paths, { requireSpk: false, asrEngine: args.asrEngine });
+      recognizer = buildRecognizer(args.asrEngine, args.lang, paths);
       currentLang = args.lang;
+      currentAsrEngine = args.asrEngine;
       onStatus("");
     }
 

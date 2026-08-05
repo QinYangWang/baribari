@@ -1,6 +1,6 @@
 {
   "name": "baribari",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "description": "Real-time meeting transcription CLI (SenseVoice + VAD + speaker ID + AI + LAN share)",
   "type": "module",
   "main": "dist/index.js",

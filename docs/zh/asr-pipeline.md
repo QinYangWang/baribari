@@ -32,6 +32,7 @@ SenseVoice 使用**离线分段识别**：程序需要先等待 VAD 判定一个
 |----|------------|-----------|------|
 | `balanced` | 0.6 | 30 | 默认 |
 | `meeting` | 0.32 | 9 | 多人轮流（推荐） |
+| `lowLatency` | 0.22 / 0.28 | 8 / 12 | 根据 SenseVoice / Fun-ASR-Nano 自动调整 |
 | `smooth` | 0.4 | 12 | 少碎句 |
 | `aggressive` | 0.25 | 6 | 短切 + 靠 turn 合并 |
 

@@ -7,11 +7,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { AudioSource, Lang, Segment, TranscribeArgs } from "./types.js";
+import type { AsrEngine, AudioSource, Lang, Segment, TranscribeArgs } from "./types.js";
 import {
   cycleVadPreset,
   displayText,
   isPartialSegment,
+  lowLatencyVad,
   matchVadPreset,
 } from "./types.js";
 import {
@@ -40,6 +41,9 @@ import {
 } from "./i18n/index.js";
 import { renameSession } from "./session.js";
 import { createKeyFeeder } from "./key-input.js";
+import { checkModels } from "./paths.js";
+import { modelOverridesFromSettings } from "./settings.js";
+import { downloadAsrModel } from "./setup.js";
 
 /** Prefer a non-internal IPv4 for LAN share URLs. */
 function lanIPv4(): string[] {
@@ -846,6 +850,9 @@ export function createTui(
     body: string;
     /** If true, y saves / n·Esc discards (merge confirm). */
     confirm?: boolean;
+    onConfirm?: () => void;
+    onCancel?: () => void;
+    blocking?: boolean;
   } | null = null;
   let toastTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -941,6 +948,7 @@ export function createTui(
 
   type SettingKind =
     | "uiLang"
+    | "asrEngine"
     | "lang"
     | "spkThr"
     | "aiEn"
@@ -976,6 +984,12 @@ export function createTui(
       label: t("settings.items.uiLang.label"),
       help: t("settings.items.uiLang.help"),
       group: t("settings.groups.ui"),
+    },
+    {
+      key: "asrEngine",
+      label: t("settings.items.asrEngine.label"),
+      help: t("settings.items.asrEngine.help"),
+      group: t("settings.groups.asr"),
     },
     {
       key: "lang",
@@ -1157,6 +1171,11 @@ export function createTui(
         };
       case "lang":
         return { text: langLabel(args.lang), fg: C.accent };
+      case "asrEngine":
+        return {
+          text: args.asrEngine === "funasr-nano" ? "Fun-ASR-Nano" : "SenseVoice",
+          fg: C.accent,
+        };
       case "spkThr":
         return {
           text: barValue(
@@ -1230,7 +1249,7 @@ export function createTui(
       case "shareHost":
         return { text: args.share.host || "0.0.0.0", fg: C.muted };
       case "vadPreset": {
-        const id = matchVadPreset(args.vad);
+        const id = matchVadPreset(args.vad, args.asrEngine);
         return {
           text: t(`settings.vadPreset.${id}`),
           fg: id === "custom" ? C.muted : C.accent,
@@ -1440,15 +1459,17 @@ export function createTui(
     kind: "error" | "warn" | "info",
     title: string,
     body: string,
-    opts?: { confirm?: boolean },
+    opts?: { confirm?: boolean; blocking?: boolean; onConfirm?: () => void; onCancel?: () => void },
   ): void {
     clearToastTimer();
-    toast = { kind, title, body, confirm: opts?.confirm };
+    toast = { kind, title, body, confirm: opts?.confirm,
+      onConfirm: opts?.onConfirm, onCancel: opts?.onCancel };
+    if (toast) toast.blocking = opts?.blocking;
     // Keep continuous merge guide in status when not a confirm toast
     if (!opts?.confirm) status = "";
     paint({ urgent: true });
     // Ordinary notices auto-dismiss after 3s (confirm waits for y/n)
-    if (!opts?.confirm) {
+    if (!opts?.confirm && !opts?.blocking) {
       const snap = toast;
       toastTimer = setTimeout(() => {
         if (toast === snap) dismissToast();
@@ -2613,7 +2634,7 @@ export function createTui(
   }
 
   function cycleVadPresetSetting(dir: 1 | -1): void {
-    const { id, vad } = cycleVadPreset(args.vad, dir);
+    const { id, vad } = cycleVadPreset(args.vad, dir, args.asrEngine);
     args.vad = { ...vad };
     notify(
       t("settings.vadPreset.applied", {
@@ -2807,6 +2828,9 @@ export function createTui(
       case "lang":
         cycleLang(dir);
         break;
+      case "asrEngine":
+        requestAsrEngine(args.asrEngine === "sensevoice" ? "funasr-nano" : "sensevoice");
+        break;
       case "spkThr":
         nudgeThreshold(dir);
         break;
@@ -2865,6 +2889,58 @@ export function createTui(
         beginEdit(key);
         break;
     }
+  }
+
+  function applyAsrEngine(engine: AsrEngine): void {
+    const adaptLowLatency =
+      matchVadPreset(args.vad, args.asrEngine) === "lowLatency";
+    args.asrEngine = engine;
+    if (adaptLowLatency) args.vad = lowLatencyVad(engine);
+    persist();
+    notify(t("settings.asrEngine.applied", {
+      name: engine === "funasr-nano" ? "Fun-ASR-Nano" : "SenseVoice",
+    }));
+    dirty = true;
+  }
+
+  function requestAsrEngine(engine: AsrEngine): void {
+    if (engine === args.asrEngine) return;
+    const ready = checkModels(modelOverridesFromSettings(), {
+      requireSpk: false,
+      asrEngine: engine,
+    }).ok;
+    if (ready) {
+      applyAsrEngine(engine);
+      return;
+    }
+    const name = engine === "funasr-nano" ? "Fun-ASR-Nano" : "SenseVoice";
+    showToast("warn", t("settings.asrEngine.downloadTitle", { name }),
+      t("settings.asrEngine.downloadAsk", {
+        name,
+        size: engine === "funasr-nano" ? "1 GB" : "230 MB",
+      }), {
+        confirm: true,
+        onCancel: () => {},
+        onConfirm: () => {
+          showToast("info", t("settings.asrEngine.downloading", { name }), "0%", { blocking: true });
+          void downloadAsrModel(engine, {
+            onProgress: (percent) => {
+              if (toast) toast.body = `${percent}%`;
+              dirty = true;
+            },
+            onExtract: () => {
+              if (toast) toast.body = t("settings.asrEngine.extracting");
+              dirty = true;
+            },
+          }).then(() => {
+            toast = null;
+            applyAsrEngine(engine);
+          }).catch((error) => {
+            toast = null;
+            showToast("error", t("settings.asrEngine.downloadFailed", { name }), String(error));
+          });
+        },
+      });
   }
 
   function toggleOrEditSetting(): void {
@@ -3236,19 +3312,24 @@ export function createTui(
       }
       if (toast.confirm) {
         if (key === "y" || key === "Y" || key === "\r" || key === "\n") {
+          const action = toast.onConfirm;
           toast = null;
-          saveMerge();
+          if (action) action();
+          else saveMerge();
           dirty = true;
           return;
         }
         if (key === "n" || key === "N" || key === "\x1b") {
+          const action = toast.onCancel;
           toast = null;
-          discardMerge();
+          if (action) action();
+          else discardMerge();
           dirty = true;
           return;
         }
         return; // wait for y/n
       }
+      if (toast.blocking) return;
       dismissToast();
       return;
     }

@@ -83,6 +83,7 @@ import {
 import { upsertGlobalSpeaker } from "./speaker-library.js";
 import readline from "node:readline";
 import { runResumeTui } from "./resume-tui.js";
+import { checkForUpdate } from "./update-check.js";
 
 const require = createRequire(import.meta.url);
 const pkg = require("../package.json") as { name: string; version: string };
@@ -217,6 +218,7 @@ function buildArgsFromSaved(
     defaultSource()) as AudioSource;
   return {
     lang: LANGS.includes(lang) ? lang : "auto",
+    asrEngine: saved.asrEngine ?? "sensevoice",
     device: saved.device,
     source: SOURCES.includes(source) ? source : defaultSource(),
     output: saved.output,
@@ -240,7 +242,10 @@ function printDoctor(): void {
   setUiLang(resolveUiLang({ flag: readUiLangFlag(), saved: saved.uiLang }));
   ensureConfigDir();
   const overrides = modelOverridesFromSettings();
-  const check = checkModels(overrides, { requireSpk: !saved.noSpk });
+  const check = checkModels(overrides, {
+    requireSpk: !saved.noSpk,
+    asrEngine: saved.asrEngine ?? "sensevoice",
+  });
   const p = check.paths;
   const ok = (b: boolean) => (b ? "✓" : "✗");
   const exists = (f: string) => fs.existsSync(f);
@@ -258,6 +263,7 @@ function printDoctor(): void {
   console.log(`  config.json ${ok(exists(path.join(configDir(), "config.json")))}  ${path.join(configDir(), "config.json")}`);
   console.log(`  uiLang      ${uiLangLabel(getUiLang())} (${getUiLang()})`);
   console.log(`  asr lang    ${saved.lang ?? "auto"}`);
+  console.log(`  asr engine  ${saved.asrEngine ?? "sensevoice"}`);
   console.log(`  source      ${saved.source ?? defaultSource()}`);
   console.log("");
   console.log("Models");
@@ -265,6 +271,8 @@ function printDoctor(): void {
   console.log(`  vad         ${ok(exists(p.vad))}  ${p.vad}`);
   console.log(`  asr model   ${ok(exists(p.senseVoiceModel))}  ${p.senseVoiceModel}`);
   console.log(`  asr tokens  ${ok(exists(p.senseVoiceTokens))}  ${p.senseVoiceTokens}`);
+  console.log(`  funasr enc  ${ok(exists(p.funAsrNanoEncoderAdaptor))}  ${p.funAsrNanoEncoderAdaptor}`);
+  console.log(`  funasr llm  ${ok(exists(p.funAsrNanoLlm))}  ${p.funAsrNanoLlm}`);
   console.log(`  speaker     ${ok(exists(p.spk))}  ${p.spk}`);
   if (check.missing.length) {
     console.log("");
@@ -380,6 +388,7 @@ Register-ArgumentCompleter -Native -CommandName ${name} -ScriptBlock {
 function addRunOptions(cmd: Command): Command {
   return cmd
     .option("--lang <lang>", `${t("cli.lang")}: ${LANGS.join("|")}`)
+    .option("--asr-engine <engine>", "ASR engine: sensevoice|funasr-nano")
     .option("--ui-lang <lang>", t("cli.uiLang"))
     .option("--device <id>", t("cli.deviceOpt"))
     .option("--list-devices", t("cli.listDevices"))
@@ -658,6 +667,7 @@ async function main() {
 
 type RunOpts = {
   lang?: string;
+  asrEngine?: string;
   uiLang?: string;
   device?: string;
   listDevices?: boolean;
@@ -712,6 +722,9 @@ async function runMain(opts: RunOpts) {
   const lang = (hasFlag("--lang")
     ? opts.lang
     : (saved.lang ?? opts.lang ?? "auto")) as string;
+  const asrEngine = (hasFlag("--asr-engine")
+    ? opts.asrEngine
+    : (saved.asrEngine ?? opts.asrEngine ?? "sensevoice")) as string;
   const source = (hasFlag("--source")
     ? opts.source
     : (saved.source ?? opts.source ?? defaultSource())) as string;
@@ -783,6 +796,10 @@ async function runMain(opts: RunOpts) {
     );
     process.exit(2);
   }
+  if (asrEngine !== "sensevoice" && asrEngine !== "funasr-nano") {
+    console.error(`Invalid ASR engine: ${asrEngine}`);
+    process.exit(2);
+  }
   if (!SOURCES.includes(source as AudioSource)) {
     console.error(
       t("cli.invalidSource", { source, opts: SOURCES.join(", ") }),
@@ -809,6 +826,7 @@ async function runMain(opts: RunOpts) {
   // First run / missing models → interactive setup guide
   const ready = await ensureReadyForAsr({
     requireSpk: !noSpk,
+    asrEngine: asrEngine as import("./types.js").AsrEngine,
     uiLangFlag: uiLang,
   });
   if (!ready) {
@@ -824,6 +842,7 @@ async function runMain(opts: RunOpts) {
 
   const args: TranscribeArgs = {
     lang: lang as Lang,
+    asrEngine: asrEngine as import("./types.js").AsrEngine,
     uiLang,
     device,
     source: source as AudioSource,
@@ -1178,6 +1197,10 @@ async function runTui(
         })
       : t("status.listening"),
   );
+  void checkForUpdate(pkg.version).then((update) => {
+    if (!update) return;
+    tui.setStatus(t("status.updateAvailable", { ...update }));
+  });
 
   // When user toggles record on without a path, bind to session audio
   const origRecord = args.record;
@@ -1299,6 +1322,9 @@ async function runPlain(args: TranscribeArgs, stop: { value: boolean }) {
   setUiLang(args.uiLang);
   const { emit, close } = createEmitter(args.output);
   const pipe = createSegmentPipeline(args, emit, plainStatus);
+  void checkForUpdate(pkg.version).then((update) => {
+    if (update) console.error(t("status.updateAvailable", { ...update }));
+  });
 
   const onSig = () => {
     if (stop.value) hardExit(130);
@@ -1380,6 +1406,7 @@ async function runJoin(
     setUiLang(ui);
     const args: TranscribeArgs = {
       lang: "auto",
+      asrEngine: "sensevoice",
       uiLang: ui,
       source: "mic",
       noSpk: true,

@@ -20,6 +20,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { t } from "./i18n/index.js";
+import type { AsrEngine } from "./types.js";
 
 export const SAMPLE_RATE = 16_000;
 
@@ -60,6 +61,8 @@ export const SENSEVOICE_DIR_NAMES = [
   "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17",
   "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17",
 ] as const;
+export const FUNASR_NANO_DIR_NAME =
+  "sherpa-onnx-funasr-nano-int8-2025-12-30";
 
 export interface ModelPathOverrides {
   /** Override root models directory. */
@@ -69,6 +72,11 @@ export interface ModelPathOverrides {
   senseVoiceDir?: string;
   senseVoiceModel?: string;
   senseVoiceTokens?: string;
+  funAsrNanoDir?: string;
+  funAsrNanoEncoderAdaptor?: string;
+  funAsrNanoLlm?: string;
+  funAsrNanoEmbedding?: string;
+  funAsrNanoTokenizer?: string;
   spk?: string;
 }
 
@@ -79,6 +87,11 @@ export interface ResolvedModelPaths {
   senseVoiceDir: string;
   senseVoiceModel: string;
   senseVoiceTokens: string;
+  funAsrNanoDir: string;
+  funAsrNanoEncoderAdaptor: string;
+  funAsrNanoLlm: string;
+  funAsrNanoEmbedding: string;
+  funAsrNanoTokenizer: string;
   spk: string;
 }
 
@@ -121,6 +134,9 @@ export function modelPaths(overrides: ModelPathOverrides = {}): ResolvedModelPat
     modelsDir,
     resolveMaybe(overrides.senseVoiceDir, cfg),
   );
+  const funAsrNanoDir =
+    resolveMaybe(overrides.funAsrNanoDir, cfg) ||
+    path.join(modelsDir, FUNASR_NANO_DIR_NAME);
 
   const vad =
     resolveMaybe(overrides.vad, cfg) || path.join(modelsDir, "silero_vad.onnx");
@@ -136,6 +152,18 @@ export function modelPaths(overrides: ModelPathOverrides = {}): ResolvedModelPat
       modelsDir,
       "3dspeaker_speech_campplus_sv_zh_en_16k-common_advanced.onnx",
     );
+  const funAsrNanoEncoderAdaptor =
+    resolveMaybe(overrides.funAsrNanoEncoderAdaptor, cfg) ||
+    path.join(funAsrNanoDir, "encoder_adaptor.int8.onnx");
+  const funAsrNanoLlm =
+    resolveMaybe(overrides.funAsrNanoLlm, cfg) ||
+    path.join(funAsrNanoDir, "llm.int8.onnx");
+  const funAsrNanoEmbedding =
+    resolveMaybe(overrides.funAsrNanoEmbedding, cfg) ||
+    path.join(funAsrNanoDir, "embedding.int8.onnx");
+  const funAsrNanoTokenizer =
+    resolveMaybe(overrides.funAsrNanoTokenizer, cfg) ||
+    path.join(funAsrNanoDir, "Qwen3-0.6B");
 
   return {
     configDir: cfg,
@@ -144,6 +172,11 @@ export function modelPaths(overrides: ModelPathOverrides = {}): ResolvedModelPat
     senseVoiceDir,
     senseVoiceModel,
     senseVoiceTokens,
+    funAsrNanoDir,
+    funAsrNanoEncoderAdaptor,
+    funAsrNanoLlm,
+    funAsrNanoEmbedding,
+    funAsrNanoTokenizer,
     spk,
   };
 }
@@ -156,15 +189,26 @@ export interface ModelCheckResult {
 
 export function checkModels(
   overrides: ModelPathOverrides = {},
-  opts?: { requireSpk?: boolean },
+  opts?: { requireSpk?: boolean; asrEngine?: AsrEngine },
 ): ModelCheckResult {
   const paths = modelPaths(overrides);
   const requireSpk = opts?.requireSpk !== false;
   const missing: ModelCheckResult["missing"] = [];
+  const asrEngine = opts?.asrEngine ?? "sensevoice";
+  const asr = asrEngine === "funasr-nano"
+    ? [
+        { key: "funAsrNanoEncoderAdaptor", path: paths.funAsrNanoEncoderAdaptor, required: true },
+        { key: "funAsrNanoLlm", path: paths.funAsrNanoLlm, required: true },
+        { key: "funAsrNanoEmbedding", path: paths.funAsrNanoEmbedding, required: true },
+        { key: "funAsrNanoTokenizer", path: paths.funAsrNanoTokenizer, required: true },
+      ]
+    : [
+        { key: "senseVoiceModel", path: paths.senseVoiceModel, required: true },
+        { key: "senseVoiceTokens", path: paths.senseVoiceTokens, required: true },
+      ];
   const need = [
     { key: "vad", path: paths.vad, required: true },
-    { key: "senseVoiceModel", path: paths.senseVoiceModel, required: true },
-    { key: "senseVoiceTokens", path: paths.senseVoiceTokens, required: true },
+    ...asr,
     { key: "spk", path: paths.spk, required: requireSpk },
   ];
   for (const n of need) {
@@ -175,11 +219,14 @@ export function checkModels(
 
 export function assertModelsExist(
   paths: ResolvedModelPaths,
-  opts?: { requireSpk?: boolean },
+  opts?: { requireSpk?: boolean; asrEngine?: AsrEngine },
 ): void {
   const requireSpk = opts?.requireSpk !== false;
   const missing: string[] = [];
-  for (const p of [paths.vad, paths.senseVoiceModel, paths.senseVoiceTokens]) {
+  const asr = opts?.asrEngine === "funasr-nano"
+    ? [paths.funAsrNanoEncoderAdaptor, paths.funAsrNanoLlm, paths.funAsrNanoEmbedding, paths.funAsrNanoTokenizer]
+    : [paths.senseVoiceModel, paths.senseVoiceTokens];
+  for (const p of [paths.vad, ...asr]) {
     if (!fs.existsSync(p)) missing.push(p);
   }
   if (requireSpk && !fs.existsSync(paths.spk)) missing.push(paths.spk);
@@ -207,6 +254,13 @@ export const MODEL_DOWNLOADS = {
     dest: "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17.tar.bz2",
     extractDir: "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17",
     approx: "~156 MB (tar.bz2) → ~230 MB extracted",
+  },
+  funAsrNano: {
+    name: "Fun-ASR-Nano int8 (zh/en/ja)",
+    url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-funasr-nano-int8-2025-12-30.tar.bz2",
+    dest: "sherpa-onnx-funasr-nano-int8-2025-12-30.tar.bz2",
+    extractDir: FUNASR_NANO_DIR_NAME,
+    approx: "~948 MB extracted",
   },
   spk: {
     name: "3dspeaker CAM++ (speaker embedding)",

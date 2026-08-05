@@ -26,7 +26,7 @@ SenseVoice は発話区間をまとめて処理するオフライン認識です
 
 ## VAD プリセット
 
-TUI の設定から `balanced`、`meeting`、`smooth`、`aggressive` を選択できます。プリセットの個別値を変更すると、表示は `custom` になります。
+TUI の設定から `balanced`、`meeting`、`low latency`、`smooth`、`aggressive` を選択できます。`low latency` はモデルに合わせて調整され、SenseVoice は終了無音 `0.22秒`・最大区間 `8秒`、Fun-ASR-Nano は文脈を多く残すため `0.28秒`・`12秒` を使います。プリセットの個別値を変更すると、表示は `custom` になります。
 
 ## 同一話者ターン
 

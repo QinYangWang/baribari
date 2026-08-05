@@ -2,7 +2,7 @@
  * First-run setup: ensure ~/.config/baribari, guide model download.
  */
 
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
@@ -80,10 +80,11 @@ async function downloadFile(
   url: string,
   dest: string,
   label: string,
+  opts?: { quiet?: boolean; onProgress?: (percent: number) => void },
 ): Promise<void> {
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   const tmp = dest + ".partial";
-  println(`${ACC}↓${RESET} ${label}`);
+  if (!opts?.quiet) println(`${ACC}↓${RESET} ${label}`);
 
   const res = await fetch(url, { redirect: "follow" });
   if (!res.ok || !res.body) {
@@ -103,13 +104,14 @@ async function downloadFile(
       got += value.length;
       if (total > 0) {
         const pct = Math.floor((got / total) * 100);
-        if (pct !== lastPct && pct % 5 === 0) {
+        opts?.onProgress?.(pct);
+        if (!opts?.quiet && pct !== lastPct && pct % 5 === 0) {
           process.stdout.write(
             `\r  ${pct}%  ${(got / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)} MB`,
           );
           lastPct = pct;
         }
-      } else if (got % (5 * 1048576) < value.length) {
+      } else if (!opts?.quiet && got % (5 * 1048576) < value.length) {
         process.stdout.write(`\r  ${(got / 1048576).toFixed(1)} MB`);
       }
     }
@@ -118,9 +120,9 @@ async function downloadFile(
     file.end(() => resolve());
     file.on("error", reject);
   });
-  process.stdout.write("\n");
+  if (!opts?.quiet) process.stdout.write("\n");
   fs.renameSync(tmp, dest);
-  println(`  ${OK}✓${RESET} ${dest}`);
+  if (!opts?.quiet) println(`  ${OK}✓${RESET} ${dest}`);
 }
 
 function extractTarBz2(archive: string, modelsDir: string): void {
@@ -140,8 +142,80 @@ function extractTarBz2(archive: string, modelsDir: string): void {
   println(`  ${OK}✓${RESET} ${t("setup.extractOk", { dir: modelsDir })}`);
 }
 
+/** Download the optional Fun-ASR-Nano bundle without writing into a live TUI. */
+export async function downloadFunAsrNano(opts?: {
+  onProgress?: (percent: number) => void;
+  onExtract?: () => void;
+}): Promise<void> {
+  ensureConfigDir();
+  const paths = modelPaths(modelOverridesFromSettings());
+  if (fs.existsSync(paths.funAsrNanoEncoderAdaptor) &&
+      fs.existsSync(paths.funAsrNanoLlm) &&
+      fs.existsSync(paths.funAsrNanoEmbedding) &&
+      fs.existsSync(paths.funAsrNanoTokenizer)) return;
+  fs.mkdirSync(paths.modelsDir, { recursive: true });
+  const archive = path.join(paths.modelsDir, MODEL_DOWNLOADS.funAsrNano.dest);
+  if (!fs.existsSync(archive)) {
+    await downloadFile(MODEL_DOWNLOADS.funAsrNano.url, archive,
+      MODEL_DOWNLOADS.funAsrNano.name,
+      { quiet: true, onProgress: opts?.onProgress });
+  }
+  opts?.onExtract?.();
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("tar", ["-xjf", archive, "-C", paths.modelsDir], {
+      shell: false, stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    child.stderr?.on("data", (chunk) => { stderr += String(chunk); });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(stderr.trim() || `tar exited with code ${code}`));
+    });
+  });
+  const check = checkModels(modelOverridesFromSettings(), {
+    requireSpk: false, asrEngine: "funasr-nano",
+  });
+  if (!check.ok) throw new Error(check.missing.map((m) => m.path).join(", "));
+}
+
+/** Download one ASR backend for use by the live settings dialog. */
+export async function downloadAsrModel(
+  engine: import("./types.js").AsrEngine,
+  opts?: { onProgress?: (percent: number) => void; onExtract?: () => void },
+): Promise<void> {
+  if (engine === "funasr-nano") return downloadFunAsrNano(opts);
+  ensureConfigDir();
+  const paths = modelPaths(modelOverridesFromSettings());
+  if (fs.existsSync(paths.senseVoiceModel) && fs.existsSync(paths.senseVoiceTokens)) return;
+  fs.mkdirSync(paths.modelsDir, { recursive: true });
+  const archive = path.join(paths.modelsDir, MODEL_DOWNLOADS.senseVoice.dest);
+  if (!fs.existsSync(archive)) {
+    await downloadFile(MODEL_DOWNLOADS.senseVoice.url, archive,
+      MODEL_DOWNLOADS.senseVoice.name,
+      { quiet: true, onProgress: opts?.onProgress });
+  }
+  opts?.onExtract?.();
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("tar", ["-xjf", archive, "-C", paths.modelsDir], {
+      shell: false, stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    child.stderr?.on("data", (chunk) => { stderr += String(chunk); });
+    child.on("error", reject);
+    child.on("close", (code) => code === 0
+      ? resolve()
+      : reject(new Error(stderr.trim() || `tar exited with code ${code}`)));
+  });
+  const check = checkModels(modelOverridesFromSettings(), {
+    requireSpk: false, asrEngine: "sensevoice",
+  });
+  if (!check.ok) throw new Error(check.missing.map((m) => m.path).join(", "));
+}
+
 export async function downloadModels(opts?: {
   skipSpk?: boolean;
+  asrEngine?: import("./types.js").AsrEngine;
 }): Promise<void> {
   ensureConfigDir();
   const paths = modelPaths(modelOverridesFromSettings());
@@ -159,8 +233,10 @@ export async function downloadModels(opts?: {
     println(`${OK}✓${RESET} ${t("setup.vadExists")}`);
   }
 
-  // SenseVoice
-  if (!fs.existsSync(paths.senseVoiceModel)) {
+  // Selected ASR model
+  if (opts?.asrEngine === "funasr-nano") {
+    await downloadFunAsrNano();
+  } else if (!fs.existsSync(paths.senseVoiceModel)) {
     const arch = path.join(modelsDir, MODEL_DOWNLOADS.senseVoice.dest);
     if (!fs.existsSync(arch)) {
       await downloadFile(
@@ -285,6 +361,7 @@ export async function runSetup(opts?: {
   modelsDir?: string;
   uiLangFlag?: string;
   skipLangPrompt?: boolean;
+  asrEngine?: import("./types.js").AsrEngine;
 }): Promise<boolean> {
   ensureConfigDir();
 
@@ -306,7 +383,10 @@ export async function runSetup(opts?: {
   }
 
   const overrides: ModelPathOverrides = modelOverridesFromSettings();
-  const check = checkModels(overrides, { requireSpk: !opts?.skipSpk });
+  const engine = opts?.asrEngine ?? loadSettings().asrEngine ?? "sensevoice";
+  const check = checkModels(overrides, {
+    requireSpk: !opts?.skipSpk, asrEngine: engine,
+  });
 
   println(`${BOLD}${ACC}${t("setup.setupHeader")}${RESET}`);
   println(`${DIM}config: ${configDir()}${RESET}`);
@@ -351,13 +431,15 @@ export async function runSetup(opts?: {
 
   if (doDownload) {
     try {
-      await downloadModels({ skipSpk: opts?.skipSpk });
+      await downloadModels({ skipSpk: opts?.skipSpk, asrEngine: engine });
     } catch (e) {
       println(`${WARN}${t("setup.autoFail", { err: e instanceof Error ? e.message : String(e) })}${RESET}`);
       println(t("setup.manualHint"));
       return false;
     }
-    const again = checkModels(overrides, { requireSpk: !opts?.skipSpk });
+    const again = checkModels(overrides, {
+      requireSpk: !opts?.skipSpk, asrEngine: engine,
+    });
     if (again.ok) {
       println(`${OK}${t("setup.canStart")}${RESET}`);
       return true;
@@ -382,6 +464,7 @@ export async function runSetup(opts?: {
  */
 export async function ensureReadyForAsr(opts?: {
   requireSpk?: boolean;
+  asrEngine?: import("./types.js").AsrEngine;
   autoSetup?: boolean;
   uiLangFlag?: string;
 }): Promise<boolean> {
@@ -390,6 +473,7 @@ export async function ensureReadyForAsr(opts?: {
   const overrides = modelOverridesFromSettings();
   const check = checkModels(overrides, {
     requireSpk: opts?.requireSpk !== false,
+    asrEngine: opts?.asrEngine,
   });
   if (check.ok) return true;
 
@@ -399,6 +483,7 @@ export async function ensureReadyForAsr(opts?: {
       skipSpk: opts?.requireSpk === false,
       uiLangFlag: opts?.uiLangFlag,
       skipLangPrompt: true,
+      asrEngine: opts?.asrEngine,
     });
     return ok;
   }
@@ -416,6 +501,7 @@ export function printPaths(): void {
   println(`vad:             ${p.vad}`);
   println(`senseVoiceModel: ${p.senseVoiceModel}`);
   println(`senseVoiceTokens:${p.senseVoiceTokens}`);
+  println(`funAsrNanoDir:   ${p.funAsrNanoDir}`);
   println(`spk:             ${p.spk}`);
   println(`recordings:      ${path.join(p.configDir, "recordings")}`);
 }

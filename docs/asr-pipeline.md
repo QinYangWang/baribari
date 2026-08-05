@@ -32,6 +32,7 @@ Defined in `src/types.ts` as `VAD_PRESETS`. TUI: Settings → VAD preset.
 |----|------------|-----------|--------|
 | `balanced` | 0.6 | 30 | Stock default |
 | `meeting` | 0.32 | 9 | Multi-speaker turn-taking |
+| `lowLatency` | 0.22 / 0.28 | 8 / 12 | SenseVoice / Fun-ASR-Nano model-aware tuning |
 | `smooth` | 0.4 | 12 | Fewer fragments |
 | `aggressive` | 0.25 | 6 | Short cuts; rely on turn merge |
 

@@ -43,7 +43,7 @@ npm i -g baribari & baribari setup --download & baribari
 | 能力 | 说明 |
 |------|------|
 | **会议专用 TUI** | 集中显示说话人、实时转写、设备、录音和共享状态 |
-| **本地语音识别** | SenseVoice + Silero VAD，转写无需依赖云端服务 |
+| **本地语音识别** | 可在 SenseVoice 与 Fun-ASR-Nano 之间切换，均搭配 Silero VAD 在本机运行 |
 | **说话人标注** | 通过声纹区分说话人；全局名册可在下次会议中自动匹配固定与会者 |
 | **可选 AI 增强** | 兼容 OpenAI API，可用于纠错、翻译和总结，并提供常用服务商预设 |
 | **自动保存会话** | 使用 `resume` 回放、续录、翻译、总结或重新共享会议 |
@@ -245,17 +245,22 @@ eval "$(baribari completion bash)"
 
 首次运行界面语言列表：`1) 中文` · `2) 日本語` · `3) English (default)`。直接回车为 **English（第 3 项）**；数字与屏幕列表一致。
 
-**VAD 预设（设置里 ←→）：** Balanced（默认）· Meeting（多人轮流，推荐）· Smooth · Aggressive。Meeting 约 `min-silence 0.32s` / `max-speech 9s`。
+**VAD 预设（设置里 ←→）：** 均衡（默认）· 会议（多人轮流，推荐）· 低延迟 · 顺滑 · 激进。低延迟模式下，SenseVoice 约等待 `0.22s` 静音，Fun-ASR-Nano 约等待 `0.28s`；Nano 会保留稍长的语音段以维持上下文。
 
 **同一说话人的语音段合并（`speakerTurn`）：** 默认最多合并同一说话人的 3 个连续短段，再交给 AI 处理。详见 [识别管线](./docs/zh/asr-pipeline.md)。
 
 **本地文本整理（无需 AI）：** 完成 ASR 和同一说话人语音段合并后、调用可选 AI 之前，程序会清理多余空白和重复标点，并应用 `replace.json` 中的替换规则。该文件支持 `{ "replacements":[{"from":"…","to":"…"}] }`，也支持扁平格式 `{ "错词":"正词" }`。修改后会根据文件更新时间自动重新加载。
 
-环境变量：`BARIBARI_CONFIG_DIR`、`BARIBARI_UI_LANG`、`BARIBARI_AI_KEY` / `OPENAI_API_KEY`。
+环境变量：`BARIBARI_CONFIG_DIR`、`BARIBARI_UI_LANG`、`BARIBARI_AI_KEY` / `OPENAI_API_KEY`、`BARIBARI_NO_UPDATE_CHECK=1`。baribari 仅在启动时后台检查一次 npm 最新版本，不阻塞启动，网络失败时不会显示错误。
 
 ---
 
 ## 模型
+
+SenseVoice 是默认模型。在 **设置 → 语音识别 → 识别模型** 中按 `←` / `→`
+即可切换到 Fun-ASR-Nano。如果本地尚未安装，baribari 会先询问是否下载
+（解压后约 1 GB），下载成功后才会切换。也可使用
+`baribari --asr-engine funasr-nano` 直接启动。
 
 ```bash
 baribari setup --download

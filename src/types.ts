@@ -1,5 +1,9 @@
 export type Lang = "auto" | "zh" | "en" | "ja" | "ko" | "yue";
 
+/** Local speech-recognition backend. */
+export type AsrEngine = "sensevoice" | "funasr-nano";
+export const DEFAULT_ASR_ENGINE: AsrEngine = "sensevoice";
+
 /** UI display language (separate from ASR `lang`). */
 export type UiLang = "zh" | "ja" | "en";
 
@@ -204,6 +208,8 @@ export const DEFAULT_SPEAKER_TURN: SpeakerTurnConfig = {
 
 export interface TranscribeArgs {
   lang: Lang;
+  /** Runtime-mutable ASR backend; the recognizer reloads between segments. */
+  asrEngine: AsrEngine;
   /** TUI/CLI UI language (zh|ja|en). Independent of ASR lang. */
   uiLang: UiLang;
   /** Device index (from --list-devices) or deviceId/name string. Mic only. */
@@ -329,6 +335,7 @@ export const DEFAULT_VAD: VadConfig = {
 export type VadPresetId =
   | "balanced"
   | "meeting"
+  | "lowLatency"
   | "smooth"
   | "aggressive"
   | "custom";
@@ -369,6 +376,18 @@ export const VAD_PRESETS: VadPreset[] = [
     },
   },
   {
+    id: "lowLatency",
+    name: "Low latency",
+    hint: "Faster final subtitles; tuned for the selected ASR model",
+    vad: {
+      threshold: 0.55,
+      minSpeechDuration: 0.3,
+      minSilenceDuration: 0.22,
+      maxSpeechDuration: 8,
+      windowSize: 512,
+    },
+  },
+  {
     id: "smooth",
     name: "Smooth",
     hint: "Fewer fragments; better punctuation feel",
@@ -394,13 +413,44 @@ export const VAD_PRESETS: VadPreset[] = [
   },
 ];
 
+/** Model-aware VAD parameters for the low-latency preset. */
+export function lowLatencyVad(asrEngine: AsrEngine): VadConfig {
+  return asrEngine === "funasr-nano"
+    ? {
+        threshold: 0.53,
+        minSpeechDuration: 0.4,
+        minSilenceDuration: 0.28,
+        maxSpeechDuration: 12,
+        windowSize: 512,
+      }
+    : {
+        threshold: 0.55,
+        minSpeechDuration: 0.3,
+        minSilenceDuration: 0.22,
+        maxSpeechDuration: 8,
+        windowSize: 512,
+      };
+}
+
 function vadClose(a: number, b: number, eps = 0.02): boolean {
   return Math.abs(a - b) <= eps;
 }
 
 /** Match current VAD to a preset, or "custom" if fine-tuned. */
-export function matchVadPreset(v: VadConfig): VadPresetId {
+export function matchVadPreset(
+  v: VadConfig,
+  asrEngine: AsrEngine = DEFAULT_ASR_ENGINE,
+): VadPresetId {
+  const low = lowLatencyVad(asrEngine);
+  if (
+    vadClose(v.threshold, low.threshold) &&
+    vadClose(v.minSpeechDuration, low.minSpeechDuration) &&
+    vadClose(v.minSilenceDuration, low.minSilenceDuration) &&
+    Math.abs(v.maxSpeechDuration - low.maxSpeechDuration) <= 0.5 &&
+    v.windowSize === low.windowSize
+  ) return "lowLatency";
   for (const p of VAD_PRESETS) {
+    if (p.id === "lowLatency") continue;
     const x = p.vad;
     if (
       vadClose(v.threshold, x.threshold) &&
@@ -415,7 +465,11 @@ export function matchVadPreset(v: VadConfig): VadPresetId {
   return "custom";
 }
 
-export function applyVadPreset(id: Exclude<VadPresetId, "custom">): VadConfig {
+export function applyVadPreset(
+  id: Exclude<VadPresetId, "custom">,
+  asrEngine: AsrEngine = DEFAULT_ASR_ENGINE,
+): VadConfig {
+  if (id === "lowLatency") return lowLatencyVad(asrEngine);
   const p = VAD_PRESETS.find((x) => x.id === id);
   return { ...(p?.vad ?? DEFAULT_VAD) };
 }
@@ -427,14 +481,15 @@ export function applyVadPreset(id: Exclude<VadPresetId, "custom">): VadConfig {
 export function cycleVadPreset(
   current: VadConfig,
   dir: 1 | -1,
+  asrEngine: AsrEngine = DEFAULT_ASR_ENGINE,
 ): { id: Exclude<VadPresetId, "custom">; vad: VadConfig } {
   const ids = VAD_PRESETS.map((p) => p.id);
-  const cur = matchVadPreset(current);
+  const cur = matchVadPreset(current, asrEngine);
   let i = cur === "custom" ? -1 : ids.indexOf(cur as Exclude<VadPresetId, "custom">);
   // From custom: → first preset, ← last preset
   if (i < 0) i = dir > 0 ? -1 : 0;
   const next = ids[(i + dir + ids.length) % ids.length]!;
-  return { id: next, vad: applyVadPreset(next) };
+  return { id: next, vad: applyVadPreset(next, asrEngine) };
 }
 
 /** Human-readable help for TUI / docs. */

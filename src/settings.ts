@@ -14,6 +14,7 @@ import {
 } from "./paths.js";
 import type {
   AiConfig,
+  AsrEngine,
   AudioSource,
   Lang,
   ShareConfig,
@@ -24,6 +25,7 @@ import type {
 } from "./types.js";
 import {
   DEFAULT_AI,
+  DEFAULT_ASR_ENGINE,
   DEFAULT_SHARE,
   DEFAULT_SPEAKER_TURN,
   DEFAULT_VAD,
@@ -40,6 +42,7 @@ export const DEFAULT_RECORD_DIR = "recordings";
 
 export interface SavedSettings {
   lang?: Lang;
+  asrEngine?: AsrEngine;
   /** UI language: zh | ja | en */
   uiLang?: UiLang;
   source?: AudioSource;
@@ -60,6 +63,7 @@ export interface SavedSettings {
 }
 
 const LANGS: Lang[] = ["auto", "zh", "en", "ja", "ko", "yue"];
+const ASR_ENGINES: AsrEngine[] = ["sensevoice", "funasr-nano"];
 const SOURCES: AudioSource[] = ["mic", "loopback", "both"];
 const TRANSLATE: TranslateLang[] = [
   "",
@@ -84,6 +88,9 @@ export function configPath(): string {
 
 function isLang(v: unknown): v is Lang {
   return typeof v === "string" && (LANGS as string[]).includes(v);
+}
+function isAsrEngine(v: unknown): v is AsrEngine {
+  return typeof v === "string" && (ASR_ENGINES as string[]).includes(v);
 }
 
 function isSource(v: unknown): v is AudioSource {
@@ -172,6 +179,11 @@ function parseModels(raw: unknown): ModelPathOverrides | undefined {
     "senseVoiceDir",
     "senseVoiceModel",
     "senseVoiceTokens",
+    "funAsrNanoDir",
+    "funAsrNanoEncoderAdaptor",
+    "funAsrNanoLlm",
+    "funAsrNanoEmbedding",
+    "funAsrNanoTokenizer",
     "spk",
   ] as const) {
     if (typeof r[k] === "string" && (r[k] as string).trim()) {
@@ -206,6 +218,7 @@ export function loadSettings(): SavedSettings {
     >;
     const out: SavedSettings = {};
     if (isLang(raw.lang)) out.lang = raw.lang;
+    if (isAsrEngine(raw.asrEngine)) out.asrEngine = raw.asrEngine;
     if (isUiLang(raw.uiLang)) out.uiLang = raw.uiLang;
     if (isSource(raw.source)) {
       if (process.platform !== "win32" && raw.source !== "mic") {
@@ -260,6 +273,11 @@ export function modelOverridesFromSettings(
     senseVoiceDir: s.models?.senseVoiceDir,
     senseVoiceModel: s.models?.senseVoiceModel,
     senseVoiceTokens: s.models?.senseVoiceTokens,
+    funAsrNanoDir: s.models?.funAsrNanoDir,
+    funAsrNanoEncoderAdaptor: s.models?.funAsrNanoEncoderAdaptor,
+    funAsrNanoLlm: s.models?.funAsrNanoLlm,
+    funAsrNanoEmbedding: s.models?.funAsrNanoEmbedding,
+    funAsrNanoTokenizer: s.models?.funAsrNanoTokenizer,
     spk: s.models?.spk,
   };
 }
@@ -324,6 +342,7 @@ export function saveSettings(partial: SavedSettings): void {
 
   const clean: Record<string, unknown> = {};
   if (next.lang !== undefined) clean.lang = next.lang;
+  clean.asrEngine = next.asrEngine ?? DEFAULT_ASR_ENGINE;
   if (next.uiLang !== undefined) clean.uiLang = next.uiLang;
   if (next.source !== undefined) clean.source = next.source;
   if (next.device !== undefined) clean.device = next.device;
@@ -380,6 +399,7 @@ export function saveSettings(partial: SavedSettings): void {
 
 export function snapshotFromArgs(args: {
   lang: Lang;
+  asrEngine: AsrEngine;
   uiLang?: UiLang;
   source: AudioSource;
   device?: string | number;
@@ -395,6 +415,7 @@ export function snapshotFromArgs(args: {
   const prev = loadSettings();
   return {
     lang: args.lang,
+    asrEngine: args.asrEngine,
     uiLang: args.uiLang,
     source: args.source,
     device: args.device,

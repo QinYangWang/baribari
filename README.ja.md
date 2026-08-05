@@ -43,7 +43,7 @@ npm i -g baribari & baribari setup --download & baribari
 | 機能 | 内容 |
 |------|------|
 | **会議向け TUI** | 話者、リアルタイム文字起こし、デバイス、録音、共有状態を一画面に表示 |
-| **ローカル音声認識** | SenseVoice と Silero VAD を使い、クラウドなしで文字起こし |
+| **ローカル音声認識** | SenseVoice と Fun-ASR-Nano を切替可能。どちらも Silero VAD とともにローカルで動作 |
 | **話者ラベル** | 声紋で話者を区別し、グローバル名簿で頻繁に会う参加者を次回から自動照合 |
 | **任意の AI 機能** | OpenAI 互換 API を使った校正、翻訳、要約と、主要サービスの Provider プリセット |
 | **セッションの自動保存** | `resume` で再生、続行録音、翻訳、要約、再共有 |
@@ -240,17 +240,22 @@ eval "$(baribari completion bash)"
 
 初回 UI 言語: `1) 中文` · `2) 日本語` · `3) English (default)`。Enter のみは **English（3）**。番号は画面の並びと一致。
 
-**VAD プリセット:** Balanced（既定）· Meeting（複数話者向け・推奨）· Smooth · Aggressive。
+**VAD プリセット:** バランス（既定）· 会議（複数話者向け・推奨）· 低遅延 · なめらか · 積極。低遅延では、SenseVoice は約 `0.22秒`、Fun-ASR-Nano は約 `0.28秒` の無音で final を確定します。Nano では文脈を保つため、少し長い発話区間を使います。
 
 **同一話者ターン結合（`speakerTurn`）:** 短い VAD 断片を同話者なら最大 3 個まで結合してから AI。詳細は [docs/asr-pipeline.md](./docs/asr-pipeline.md)。
 
 **ローカル整形（AI 不要）：** ASR と同話者結合のあと、任意 AI の前に句読点整理と `replace.json`。`{ "replacements":[…] }` または `{ "誤":"正" }`。mtime でホットリロード。
 
-環境変数: `BARIBARI_CONFIG_DIR` · `BARIBARI_UI_LANG` · `BARIBARI_AI_KEY` / `OPENAI_API_KEY`
+環境変数: `BARIBARI_CONFIG_DIR` · `BARIBARI_UI_LANG` · `BARIBARI_AI_KEY` / `OPENAI_API_KEY` · `BARIBARI_NO_UPDATE_CHECK=1`。npm の最新版は起動時にバックグラウンドで1回だけ確認し、ネットワークエラーも表示しません。
 
 ---
 
 ## モデル
+
+既定は SenseVoice です。**設定 → Speech ASR → ASRモデル** で `←` / `→` を
+押すと Fun-ASR-Nano に切り替えられます。未インストールの場合はダウンロード
+確認（展開後約 1 GB）が表示され、成功したあとに切り替わります。
+`baribari --asr-engine funasr-nano` で直接起動することもできます。
 
 ```bash
 baribari setup --download

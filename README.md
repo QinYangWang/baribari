@@ -43,7 +43,7 @@ npm i -g baribari & baribari setup --download & baribari
 | Feature | What you get |
 |---------|----------------|
 | **Meeting-first TUI** | See speakers, live transcripts, devices, recording, and sharing status in one place |
-| **Local speech recognition** | SenseVoice and Silero VAD run through sherpa-onnx; speech recognition does not require the cloud |
+| **Local speech recognition** | Switch between SenseVoice and Fun-ASR-Nano; both run locally through sherpa-onnx with Silero VAD |
 | **Speaker labels** | Voice embeddings distinguish speakers, while a global roster recognizes frequent attendees in later meetings |
 | **Optional AI** | Use an OpenAI-compatible API for correction, translation, and summaries |
 | **Saved sessions** | Reopen transcripts to play audio, continue recording, translate, summarize, or share |
@@ -326,6 +326,7 @@ In the TUI: **Settings → VAD preset** (`←` / `→`). Picking a preset writes
 |--------|-------------|------------|--------|
 | **Balanced** (default) | 0.6s | 30s | Fewer cuts, longer phrases |
 | **Meeting** | 0.32s | 9s | Multi-speaker turn-taking (recommended) |
+| **Low latency** | 0.22s / 0.28s | 8s / 12s | Faster finals; tuned for SenseVoice / Fun-ASR-Nano |
 | **Smooth** | 0.4s | 12s | Fewer fragments |
 | **Aggressive** | 0.25s | 6s | Short cuts; lean on same-speaker merge |
 
@@ -367,15 +368,25 @@ Or a flat map: `{ "日言語": "日本語", "ズーム": "Zoom" }`. Longest matc
 | `BARIBARI_UI_LANG` | `zh` \| `ja` \| `en` |
 | `BARIBARI_AI_KEY` | Preferred API key |
 | `OPENAI_API_KEY` | Fallback API key |
+| `BARIBARI_NO_UPDATE_CHECK` | Set to `1` to disable the startup npm version check |
+
+The version check runs once in the background at startup and silently ignores network errors.
 
 ---
 
 ## Models
 
+SenseVoice is the default. Open **Settings → Speech ASR → ASR model** and use
+`←` / `→` to switch to Fun-ASR-Nano. If its files are not installed, baribari
+asks before downloading them (about 1 GB extracted) and switches only after the
+download succeeds. You can also start directly with
+`baribari --asr-engine funasr-nano`.
+
 | Component | Role | Auto-download |
 |-----------|------|----------------|
 | **Silero VAD** | Speech segmentation | `baribari setup --download` |
 | **SenseVoice** | Multilingual ASR | same |
+| **Fun-ASR-Nano** | Optional local ASR for Chinese, English, and Japanese | downloaded when selected |
 | **3D-Speaker CAM++** | Speaker embeddings | same (`--skip-spk` to omit) |
 
 Manual URLs and layout: see [Models (detail)](#models-detail) or run `baribari paths`.

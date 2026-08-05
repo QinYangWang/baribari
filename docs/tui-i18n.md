@@ -23,6 +23,10 @@ Open Settings with `s` to change the interface language, recognition, AI, audio,
 
 With SenseVoice, a partial event is usually a **status** such as “Recognizing…”, not provisional transcript text. A future online engine can send real partial text through the same channel.
 
+Under **Settings → Speech ASR → ASR model**, switch between SenseVoice and
+Fun-ASR-Nano with `←` / `→`. When Fun-ASR-Nano is missing, the TUI asks before
+downloading it and keeps the current model active until installation succeeds.
+
 ## Key cheatsheet (live)
 
 See README for the full table. Highlights: `p`/`Space` pause, `s` settings, `h` share, `r` record, `c` clear screen, `Tab` focus, `1–9` assign, `m` merge, `e` rename session, wheel/`g` scroll, `q` quit.
