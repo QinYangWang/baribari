@@ -1,0 +1,104 @@
+---
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbList,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Separator } from "@/components/ui/separator";
+import type { Breadcrumb as BreadcrumbType } from "@/lib/wiki/generate-breadcrumbs";
+import {
+  getLocaleFromPath,
+  homeHref,
+  UI,
+  type Locale,
+} from "@/lib/i18n";
+import { Download } from "@lucide/astro";
+
+interface Props {
+  title: string;
+  breadcrumbs: BreadcrumbType[];
+  growthStage: string;
+  updatedAt: Date;
+  rawContent?: string;
+  downloadFilename?: string;
+  locale?: Locale;
+}
+
+const {
+  title,
+  breadcrumbs,
+  growthStage,
+  updatedAt,
+  rawContent,
+  downloadFilename,
+  locale: localeProp,
+} = Astro.props;
+
+const locale = localeProp ?? getLocaleFromPath(Astro.url.pathname);
+const ui = UI[locale];
+
+function formatBreadcrumbLabel(label: string): string {
+  return label.replace(/-/g, " ");
+}
+
+function formatDate(date: Date): string {
+  const tag = locale === "zh" ? "zh-CN" : locale === "ja" ? "ja-JP" : "en-US";
+  return date.toLocaleDateString(tag, { dateStyle: "medium" });
+}
+
+const showDownload = rawContent && downloadFilename;
+---
+
+<header class="mb-10">
+  <Breadcrumb class="mb-4">
+    <BreadcrumbList>
+      <BreadcrumbItem><a href={homeHref(locale)}>{ui.home}</a></BreadcrumbItem>
+      <BreadcrumbSeparator />
+      {
+        breadcrumbs.map((breadcrumb, index) => (
+          <>
+            <BreadcrumbItem>
+              {formatBreadcrumbLabel(breadcrumb.label)}
+            </BreadcrumbItem>
+            {index < breadcrumbs.length - 1 && <BreadcrumbSeparator />}
+          </>
+        ))
+      }
+    </BreadcrumbList>
+  </Breadcrumb>
+  <h1 class="text-4xl font-bold tracking-tight mb-4">{title}</h1>
+
+  <div class="flex items-center justify-between mb-6">
+    <div class="flex items-center gap-3">
+      <Badge variant="secondary">{growthStage}</Badge>
+      <span class="text-sm text-muted-foreground">
+        {locale === "zh"
+          ? `更新于 ${formatDate(updatedAt)}`
+          : locale === "ja"
+            ? `更新: ${formatDate(updatedAt)}`
+            : `Last update on ${formatDate(updatedAt)}`}
+      </span>
+    </div>
+    {
+      showDownload && (
+        <Button
+          as="a"
+          href={`data:text/markdown;charset=utf-8,${encodeURIComponent(rawContent)}`}
+          download={`${downloadFilename}.md`}
+          size="sm"
+          variant="secondary"
+          class="cursor-pointer"
+          title="Download as Markdown"
+        >
+          <Download class="size-4" />
+          <span class="sr-only sm:not-sr-only">Download .md</span>
+        </Button>
+      )
+    }
+  </div>
+
+  <Separator />
+</header>

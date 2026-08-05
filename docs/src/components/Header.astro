@@ -1,0 +1,188 @@
+---
+import { Menu } from "@lucide/astro";
+import { SITE } from "@/lib/site-config";
+import { Button } from "@/components/ui/button";
+import ThemeToggle from "@/components/ThemeToggle.astro";
+import LocaleSwitch from "@/components/LocaleSwitch.astro";
+import {
+  getLocaleFromPath,
+  homeHref,
+  isLocale,
+  stripBase,
+  type Locale,
+} from "@/lib/i18n";
+
+interface Props {
+  locale?: Locale;
+}
+
+const locale = Astro.props.locale ?? getLocaleFromPath(Astro.url.pathname);
+const path = Astro.url.pathname;
+const showNavToggle = path.includes("wiki");
+const githubUrl = "https://github.com/QinYangWang/baribari";
+
+// Home already has a large title — hide the redundant top-left brand there.
+const stripped = stripBase(path).replace(/\/$/, "") || "/";
+const parts = stripped === "/" ? [] : stripped.split("/").filter(Boolean);
+const isHome =
+  parts.length === 0 || (parts.length === 1 && isLocale(parts[0]!));
+// Match WikiLayout grid so brand lines up with sidebar L1 labels (md+).
+const isWiki = showNavToggle;
+---
+
+<header class="sticky top-0 z-40 bg-background/80 backdrop-blur-sm">
+  <div
+    class:list={[
+      "mx-auto max-w-10/12 px-4 py-3 sm:py-5",
+      // Mobile: one row. md+ wiki: same 3-col grid as content so EN/ZH/JA
+      // shares the right column left edge with "On this page".
+      isWiki
+        ? "flex items-center justify-between md:grid md:grid-cols-[0.5fr_1fr_250px] md:gap-8 lg:gap-16"
+        : "flex items-center justify-between",
+    ]}
+  >
+    <div class="flex min-h-9 min-w-0 items-center">
+      {
+        showNavToggle && (
+          <Button
+            variant="ghost"
+            size="icon"
+            id="nav-toggle"
+            class="md:hidden inline-flex -ml-2 shrink-0"
+            aria-label="Toggle navigation"
+          >
+            <Menu class="size-5" />
+          </Button>
+        )
+      }
+      {
+        !isHome && (
+          <a
+            href={homeHref(locale)}
+            class:list={[
+              "font-serif text-base sm:text-lg font-semibold tracking-tight truncate",
+              showNavToggle ? "ml-0.5 md:ml-0" : "",
+            ]}
+          >
+            {SITE.name}
+          </a>
+        )
+      }
+    </div>
+
+    {/* Middle col (wiki md+): GitHub + theme, flush to content column end */}
+    {
+      isWiki && (
+        <div class="hidden md:flex min-h-9 items-center justify-end gap-0.5 sm:gap-1.5">
+          <a
+            href={githubUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="GitHub"
+            title="GitHub"
+            class="inline-flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <svg
+              class="size-5"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"
+              ></path>
+            </svg>
+          </a>
+          <ThemeToggle />
+        </div>
+      )
+    }
+
+    {/*
+      Wiki md+: locale sits in the TOC column (same left edge as "On this page").
+      Mobile / home: locale + icons in one trailing cluster.
+    */}
+    <div
+      class:list={[
+        "flex min-h-9 shrink-0 items-center gap-0.5 sm:gap-1.5",
+        isWiki && "md:pl-1",
+        !isWiki && "ml-auto",
+      ]}
+    >
+      <LocaleSwitch {locale} />
+      <a
+        href={githubUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="GitHub"
+        title="GitHub"
+        class:list={[
+          "inline-flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          isWiki && "md:hidden",
+        ]}
+      >
+        <svg
+          class="size-5"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path
+            d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"
+          ></path>
+        </svg>
+      </a>
+      <div class:list={[isWiki && "md:hidden"]}>
+        <ThemeToggle />
+      </div>
+    </div>
+  </div>
+</header>
+
+<script>
+  const NAV_ATTR = "data-mobile-nav";
+
+  function toggleNav() {
+    const html = document.documentElement;
+    const isOpen = html.getAttribute(NAV_ATTR) === "true";
+    html.setAttribute(NAV_ATTR, isOpen ? "false" : "true");
+    document.body.style.overflow = isOpen ? "" : "hidden";
+    const nav = document.getElementById("mobile-nav");
+    if (nav) nav.inert = isOpen;
+  }
+
+  function closeNav() {
+    document.documentElement.setAttribute(NAV_ATTR, "false");
+    document.body.style.overflow = "";
+    const nav = document.getElementById("mobile-nav");
+    if (nav) nav.inert = true;
+  }
+
+  document.addEventListener("click", (e) => {
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    const toggle = target.closest("#nav-toggle");
+    const closeBtn = target.closest("#mobile-nav-close");
+    const backdrop = target.closest("#mobile-nav-backdrop");
+
+    if (toggle) {
+      toggleNav();
+      return;
+    }
+
+    if (document.documentElement.getAttribute(NAV_ATTR) !== "true") return;
+
+    if (closeBtn || backdrop) {
+      closeNav();
+    }
+  });
+
+  document.addEventListener("keydown", (e) => {
+    if (
+      e.key === "Escape" &&
+      document.documentElement.getAttribute(NAV_ATTR) === "true"
+    ) {
+      closeNav();
+    }
+  });
+</script>

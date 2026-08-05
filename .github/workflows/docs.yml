@@ -1,4 +1,4 @@
-# Build VitePress docs/ and deploy to GitHub Pages.
+# Build Veka (Astro) docs under docs/ and deploy to GitHub Pages.
 # One-time: Settings → Pages → Source = GitHub Actions
 
 name: Docs
@@ -9,8 +9,6 @@ on:
     paths:
       - "docs/**"
       - ".github/workflows/docs.yml"
-      - "package.json"
-      - "package-lock.json"
   workflow_dispatch:
 
 permissions:
@@ -35,20 +33,20 @@ jobs:
         with:
           node-version: "22"
           cache: npm
+          cache-dependency-path: docs/package-lock.json
 
-      - name: Install
-        # bionic-audio is Windows-only; docs do not execute it.
-        run: npm ci --force --ignore-scripts
+      - name: Install docs dependencies
+        working-directory: docs
+        run: npm ci
 
       - name: Build docs
-        run: npm run docs:build
-        env:
-          DOCS_BASE: /baribari/
+        working-directory: docs
+        run: npm run build
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs/.vitepress/dist
+          path: docs/dist
 
   deploy:
     needs: build

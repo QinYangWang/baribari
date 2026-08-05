@@ -1,0 +1,17 @@
+---
+import { StickySurface } from "@/components/ui/sticky-surface";
+import WikiNav from "./WikiNav.astro";
+import { getLocaleFromPath, type Locale } from "@/lib/i18n";
+
+interface Props {
+  locale?: Locale;
+}
+
+const locale = Astro.props.locale ?? getLocaleFromPath(Astro.url.pathname);
+---
+
+<StickySurface
+  class="top-24 max-h-[calc(100vh-6rem)] scrollbar-none overflow-y-auto pb-8 pr-4"
+>
+  <WikiNav {locale} />
+</StickySurface>

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://qinyangwang.github.io/baribari/sitemap-index.xml

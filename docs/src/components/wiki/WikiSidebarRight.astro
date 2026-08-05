@@ -1,0 +1,97 @@
+---
+import { StickySurface } from "@/components/ui/sticky-surface";
+import { withBase } from "@/lib/site-config";
+import { getLocaleFromPath, type Locale } from "@/lib/i18n";
+
+interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
+interface Props {
+  headings: Heading[];
+  tags: string[];
+  locale?: Locale;
+}
+
+const {
+  headings,
+  tags,
+  locale: localeProp,
+} = Astro.props;
+
+const locale = localeProp ?? getLocaleFromPath(Astro.url.pathname);
+const tagsHref = withBase(locale === "en" ? "/tags" : `/${locale}/tags`);
+const tagHref = (tag: string) =>
+  withBase(locale === "en" ? `/tag/${tag}` : `/${locale}/tag/${tag}`);
+
+const tocHeadings = headings.filter((h) => h.depth > 1);
+const visibleTags = tags.filter(
+  (t) => !["en", "zh", "ja", "blog", "hub", "index"].includes(t),
+);
+
+const tocLabel =
+  locale === "zh" ? "本页目录" : locale === "ja" ? "このページ" : "On this page";
+const tagsLabel =
+  locale === "zh" ? "标签" : locale === "ja" ? "タグ" : "Tags";
+
+function tocIndent(depth: number): string {
+  if (depth <= 2) return "";
+  if (depth === 3) return "ml-3";
+  if (depth === 4) return "ml-6";
+  return "ml-9";
+}
+---
+
+<StickySurface
+  class="top-24 max-h-[calc(100vh-6rem)] scrollbar-none overflow-y-auto pb-8 pl-1 pr-4 space-y-6"
+>
+  {
+    tocHeadings.length > 0 && (
+      <div>
+        <span class="mb-3 block text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+          {tocLabel}
+        </span>
+        <nav class="space-y-1">
+          {tocHeadings.map((h) => (
+            <a
+              href={`#${h.slug}`}
+              data-toc={h.slug}
+              class:list={[
+                "block text-sm leading-snug transition-colors rounded py-0.5",
+                tocIndent(h.depth),
+                "text-muted-foreground hover:text-foreground",
+              ]}
+            >
+              {h.text}
+            </a>
+          ))}
+        </nav>
+      </div>
+    )
+  }
+
+  {
+    visibleTags.length > 0 && (
+      <div>
+        <a
+          href={tagsHref}
+          class="mb-3 block text-xs font-semibold uppercase tracking-widest text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {tagsLabel}
+        </a>
+        <div class="flex flex-wrap gap-1.5">
+          {visibleTags.map((tag) => (
+            <a
+              href={tagHref(tag)}
+              class="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary"
+            >
+              {tag}
+            </a>
+          ))}
+        </div>
+      </div>
+    )
+  }
+</StickySurface>

@@ -1,0 +1,50 @@
+---
+import {
+  LOCALES,
+  LOCALE_LABELS,
+  LOCALE_NAMES,
+  type Locale,
+  switchLocalePath,
+} from "@/lib/i18n";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const path = Astro.url.pathname;
+---
+
+<div
+  class="flex items-center gap-0.5 text-xs sm:text-sm font-medium tracking-wide"
+  role="navigation"
+  aria-label="Language"
+>
+  {
+    LOCALES.map((code, i) => (
+      <>
+        {i > 0 && (
+          <span class="text-border px-0.5" aria-hidden="true">
+            /
+          </span>
+        )}
+        <a
+          href={switchLocalePath(path, code)}
+          hreflang={code === "zh" ? "zh-CN" : code}
+          title={LOCALE_NAMES[code]}
+          aria-label={LOCALE_NAMES[code]}
+          class:list={[
+            "py-0.5 rounded transition-colors tabular-nums",
+            i === 0 ? "pr-1 pl-0" : "px-1",
+            code === locale
+              ? "text-foreground"
+              : "text-muted-foreground hover:text-foreground",
+          ]}
+          aria-current={code === locale ? "page" : undefined}
+        >
+          {LOCALE_LABELS[code]}
+        </a>
+      </>
+    ))
+  }
+</div>

@@ -1,0 +1,70 @@
+---
+import BaseLayout from "@/layouts/BaseLayout.astro";
+import { ArrowRight } from "@lucide/astro";
+import { withBase } from "@/lib/site-config";
+import { getCategorizedNotes } from "@/lib/wiki/get-categorized-notes";
+import NoteCard from "@/components/wiki/NoteCard.astro";
+import InstallCmd from "@/components/InstallCmd.astro";
+import { type Locale, UI, categoryLabel } from "@/lib/i18n";
+
+interface Props {
+  locale: Locale;
+}
+
+const { locale } = Astro.props;
+const ui = UI[locale];
+const categories = await getCategorizedNotes(locale);
+---
+
+<BaseLayout title={ui.homeTitle} {locale}>
+  {/* Same shell as Header / WikiLayout so left edges line up */}
+  <main
+    class="mx-auto max-w-10/12 px-4 py-16 md:py-24"
+    data-pagefind-body
+  >
+    <header class="mb-16 max-w-xl">
+      <h1 class="font-serif text-3xl font-semibold tracking-tight md:text-4xl">
+        baribari
+      </h1>
+      <p class="mt-4 text-lg text-muted-foreground leading-relaxed">
+        {ui.tagline}
+      </p>
+      <InstallCmd
+        cmd={ui.installCmd}
+        copyLabel={ui.copy}
+        copiedLabel={ui.copied}
+      />
+    </header>
+
+    {
+      categories.map(({ name, notes }) => (
+        <section class="mb-14">
+          <h2 class="mb-4 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            {categoryLabel(locale, name)} &middot; {notes.length}{" "}
+            {notes.length === 1 ? ui.note : ui.notes}
+          </h2>
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {notes.map((note) => (
+              <NoteCard
+                id={note.id}
+                title={note.title}
+                description={note.description}
+                growthStage={note.growthStage}
+              />
+            ))}
+          </div>
+        </section>
+      ))
+    }
+
+    <footer class="flex justify-center">
+      <a
+        href={withBase(locale === "en" ? "/tags" : `/${locale}/tags`)}
+        class="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      >
+        {ui.browseTags}
+        <ArrowRight class="size-4" />
+      </a>
+    </footer>
+  </main>
+</BaseLayout>

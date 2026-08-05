@@ -1,7 +1,5 @@
 node_modules/
 dist/
-docs/.vitepress/dist/
-docs/.vitepress/cache/
 models/
 recordings/
 out/
@@ -16,3 +14,9 @@ baribari.config.json
 *.log
 .idea/
 .vscode/
+
+# Veka / Astro docs
+docs/dist/
+docs/.astro/
+docs/node_modules/
+fixtures/

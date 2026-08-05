@@ -1,0 +1,118 @@
+---
+title: "路线图"
+description: "Turn live speech into understanding people can share, revisit, and build on — without giving up control of the audio. This board communicates priority"
+createdAt: 2026-08-05
+updatedAt: 2026-08-05
+tags: ["project", "roadmap"]
+isPinned: true
+growthStage: "seedling"
+---
+Turn live speech into understanding people can share, revisit, and build on — without giving up control of the audio.
+
+This board communicates **priority**, not release dates. Cards move when reliability and measured quality support the next layer.
+
+## 现在
+
+### 不会轻易中断的会议
+
+*稳定性* — 模型、音频或终端异常时，也要保护正在进行的会议。
+
+- 录音流式落盘并限制所有队列
+- 原子写入状态并恢复未结束会话
+- 续传、校验并重试模型下载
+- 覆盖数小时采集与续录压力测试
+
+### 可信的统一基准
+
+*质量* — 先测量，再调模型，也只宣传能复现的提升。
+
+- 对比 SenseVoice、Fun-ASR-Nano 与 ReazonSpeech
+- 覆盖日语快语速、轮流发言、噪声和远场
+- 记录错误率、最终字幕延迟、内存与 CPU
+
+## 接下来
+
+### 更早理解正在说什么
+
+*字幕* — 缩短可靠字幕的等待时间，同时避免把一句话切得太碎。
+
+- 优化模型感知的 VAD 与最终句提交
+- 支持人名和领域术语热词
+- 评估流式草稿 + 离线最终句
+- 验证 online Zipformer 临时字幕
+
+### 记住是谁在说话
+
+*说话人* — 宁可诚实标记不确定，也不要自信地认错人。
+
+- 多窗口声纹投票
+- 检测长片段中的说话人切换
+- 支持不确定、混合、拆分与重新匹配
+- 提供可选的会后说话人重标
+
+## 随后
+
+### 可以继续利用的会议记录
+
+*知识* — 从一份转写文件，走向持久、可搜索的上下文。
+
+- 全文搜索并跳到对应时刻
+- 编辑时保留原文与译文
+- 导出 SRT、VTT、Markdown 和 JSON
+- 批量导入并重跑指定片段
+
+### 一套语音引擎，多人使用
+
+*自部署* — 一台设备负责采集和推理，团队从浏览器跟进。
+
+- 增加 baribari serve 与版本化事件协议
+- 通过游标重连并去重消息
+- 提供访问令牌、API、Webhook 和基础管理页
+- 补充 Docker、systemd 与局域网部署
+
+## 实验场
+
+### 跨语言开口交流
+
+*语音* — 探索把翻译变成音频，同时保留用户控制。
+
+- 翻译 → TTS → 虚拟麦克风
+- 验证延迟、打断策略与回声控制
+- 近期不做声音克隆
+
+### 带反馈的口语练习
+
+*学习* — 验证本地语音底座能否提供真正有用的口语指导。
+
+- 音素对齐与发音反馈
+- 重音、节奏、音高和语法指导
+- 可选的置顶字幕窗口
+
+> **当前重点**
+>
+> 先让数小时会议连续、可恢复，再在稳定底座上改善日语字幕和说话人识别。
+
+
+## 平台底座
+
+所有任务都依赖稳定的引擎层：统一 ASR、说话人、翻译和 TTS 接口；统一且可校验的模型目录；版本化字幕事件 API；以及进入回归测试的性能与质量基准。
+
+## 近期不做
+
+
+
+## 如何参与
+
+- 选择边界明确的任务卡，大型实现前先开 issue
+- 新模型需附许可证、来源、基准数据和可复现样本
+- 质量问题请提供语言、音频环境、模型和预期结果
+- 捐献用于模型托管、CI、签名和测试设备；功能始终保持开放
+
+## Not planned soon
+
+- 移动端客户端
+- 商业 SaaS 与计费
+- 默认依赖云端
+- 完整视频会议系统
+- 近期声音克隆
+- 无分离模型的完美叠话拆分
