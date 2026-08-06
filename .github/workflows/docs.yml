@@ -1,4 +1,4 @@
-# Build Veka (Astro) docs under docs/ and deploy to GitHub Pages.
+# Build Veka (Astro) docs under apps/docs/ and deploy to GitHub Pages.
 # One-time: Settings → Pages → Source = GitHub Actions
 
 name: Docs
@@ -7,7 +7,10 @@ on:
   push:
     branches: [main]
     paths:
-      - "docs/**"
+      - "apps/docs/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "package.json"
       - ".github/workflows/docs.yml"
   workflow_dispatch:
 
@@ -26,27 +29,33 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        # actions/checkout@v4.2.2
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Setup pnpm
+        # pnpm/action-setup@v4.1.0
+        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda
+        with:
+          version: 11.20.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        # actions/setup-node@v4.4.0
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: docs/package-lock.json
+          cache: pnpm
 
-      - name: Install docs dependencies
-        working-directory: docs
-        run: npm ci
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Build docs
-        working-directory: docs
-        run: npm run build
+        run: pnpm docs:build
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        # actions/upload-pages-artifact@v3.0.1
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa
         with:
-          path: docs/dist
+          path: apps/docs/dist
 
   deploy:
     needs: build
@@ -57,4 +66,5 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        # actions/deploy-pages@v4.0.5
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e

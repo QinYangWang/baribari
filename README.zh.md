@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./docs/public/brand/baribari-logo.png" alt="baribari" width="72">
+<img src="./apps/docs/public/brand/baribari-logo.png" alt="baribari" width="72">
 
 # baribari
 
@@ -16,7 +16,7 @@
 
 ---
 
-<img src="./docs/public/screenshots/demo-mode.png" alt="Demo 会话，包含时间轴、说话人标签、原文和译文" width="960">
+<img src="./apps/docs/public/screenshots/demo-mode.png" alt="Demo 会话，包含时间轴、说话人标签、原文和译文" width="960">
 
 **让每次对话成为可共享、可延续的知识。**
 
@@ -62,8 +62,9 @@ baribari doctor   # 检查音频与模型
 ```bash
 git clone https://github.com/QinYangWang/baribari.git
 cd baribari
-npm install          # Linux 可能需要: npm install --force
-npm run build
+corepack enable
+pnpm install --frozen-lockfile
+pnpm build
 ```
 
 欢迎贡献。请在 [GitHub](https://github.com/QinYangWang/baribari) 开 issue 或 PR。

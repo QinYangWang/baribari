@@ -1,0 +1,43 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+sharedWorkspaceLockfile: true
+saveExact: true
+minimumReleaseAge: 4320
+minimumReleaseAgeStrict: true
+minimumReleaseAgeIgnoreMissingTime: false
+trustPolicy: no-downgrade
+trustLockfile: false
+blockExoticSubdeps: true
+strictDepBuilds: true
+
+# Exact-version exclusions only where no provenance-attested replacement exists
+# in the required range. Reviewed 2026-08-06.
+# - chokidar@4.0.3: 4.0.0/4.0.1 had provenance; 4.0.2+ dropped it; no later 4.x
+#   restored attestation. Required by @astrojs/check.
+# - semver@6.3.1: security backport on the 6.x line published after 7.x releases
+#   that had provenance; cannot move consumers that pin semver@6 to 7.x.
+trustPolicyExclude:
+  - chokidar@4.0.3
+  - semver@6.3.1
+
+# undici-types@6.21.0 (pulled by @types/node@22) lacks provenance while earlier
+# 6.x releases had it. Prefer a later 6.x release that restored provenance
+# attestation rather than excluding the trust check.
+overrides:
+  undici-types: 6.28.0
+
+# Reviewed dependency lifecycle scripts only.
+# Approval is for the named package/version matcher, not every future release.
+# Inspect scripts before flipping a value to true. Never use dangerouslyAllowAllBuilds.
+allowBuilds:
+  # Downloads/links the platform esbuild binary used by Astro/Vite docs builds.
+  esbuild@0.28.1: true
+  # Downloads the platform ffmpeg binary used by local fixture generation scripts.
+  ffmpeg-static@5.3.0: true
+  # Optional macOS watcher native binding; not required for Linux CI or published CLI.
+  fsevents: false
+  # Copies a service-worker file only when package.json.msw.workerDirectory is set.
+  # Docs do not use MSW workers; deny install-time execution.
+  msw: false

@@ -20,20 +20,23 @@
     "typecheck": "tsc --noEmit",
     "check:i18n": "node scripts/check-i18n.mjs",
     "check:i18n:strict": "node scripts/check-i18n.mjs --strict",
+    "test": "pnpm run test:ai-guard && pnpm run test:speaker && pnpm run check:i18n",
     "test:ai-guard": "tsx scripts/test-ai-translation-guard.ts",
     "test:speaker": "tsx scripts/test-speaker-id.ts",
     "precommit": "node scripts/pre-commit.mjs",
     "hooks:install": "git config core.hooksPath .githooks",
-    "prepublishOnly": "npm run typecheck && npm run check:i18n && npm run build",
+    "prepublishOnly": "pnpm run typecheck && pnpm run check:i18n && pnpm run build",
     "fixtures:meetings": "node scripts/generate-meeting-fixtures.mjs",
-    "docs:dev": "npm run dev --prefix docs",
-    "docs:build": "npm run build --prefix docs",
-    "docs:preview": "npm run preview --prefix docs",
-    "docs:install": "npm install --prefix docs"
+    "docs:dev": "pnpm --filter baribari-docs dev",
+    "docs:build": "pnpm --filter baribari-docs build",
+    "docs:preview": "pnpm --filter baribari-docs preview",
+    "pack:check": "node scripts/pack-check.mjs",
+    "security:check": "pnpm audit --audit-level high && pnpm audit signatures"
   },
   "engines": {
     "node": ">=18"
   },
+  "packageManager": "pnpm@11.20.0",
   "keywords": [
     "asr",
     "speech-to-text",
@@ -54,22 +57,18 @@
   "homepage": "https://github.com/QinYangWang/baribari#readme",
   "license": "MIT",
   "dependencies": {
-    "bionic-audio": "^1.1.1",
-    "commander": "^13.1.0",
-    "node-cpal": "^0.1.1",
-    "sherpa-onnx-node": "^1.13.4",
-    "ws": "^8.21.1"
+    "bionic-audio": "1.1.1",
+    "commander": "13.1.0",
+    "node-cpal": "0.1.1",
+    "sherpa-onnx-node": "1.13.4",
+    "ws": "8.21.1"
   },
   "devDependencies": {
-    "@types/node": "^22.15.30",
-    "@types/ws": "^8.18.1",
-    "ffmpeg-static": "^5.2.0",
-    "node-edge-tts": "^1.2.10",
-    "tsx": "^4.19.4",
-    "typescript": "^5.8.3"
-  },
-  "allowScripts": {
-    "esbuild@0.28.1": true,
-    "esbuild@0.21.5": true
+    "@types/node": "22.20.1",
+    "@types/ws": "8.18.1",
+    "ffmpeg-static": "5.3.0",
+    "node-edge-tts": "1.2.10",
+    "tsx": "4.23.1",
+    "typescript": "5.9.3"
   }
 }

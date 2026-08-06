@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./docs/public/brand/baribari-logo.png" alt="baribari" width="72">
+<img src="./apps/docs/public/brand/baribari-logo.png" alt="baribari" width="72">
 
 # baribari
 
@@ -16,7 +16,7 @@
 
 ---
 
-<img src="./docs/public/screenshots/demo-mode.png" alt="デモセッション: タイムライン、話者ラベル、原文と訳" width="960">
+<img src="./apps/docs/public/screenshots/demo-mode.png" alt="デモセッション: タイムライン、話者ラベル、原文と訳" width="960">
 
 **会話を、共有できる持続的な知識へ。**
 
@@ -62,8 +62,9 @@ baribari doctor   # 音声とモデルの診断
 ```bash
 git clone https://github.com/QinYangWang/baribari.git
 cd baribari
-npm install          # Linux では npm install --force が必要な場合あり
-npm run build
+corepack enable
+pnpm install --frozen-lockfile
+pnpm build
 ```
 
 貢献歓迎です。[GitHub](https://github.com/QinYangWang/baribari) で issue または PR を開いてください。

@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./docs/public/brand/baribari-logo.png" alt="baribari" width="72">
+<img src="./apps/docs/public/brand/baribari-logo.png" alt="baribari" width="72">
 
 # baribari
 
@@ -16,7 +16,7 @@
 
 ---
 
-<img src="./docs/public/screenshots/demo-mode.png" alt="Demo session with a timeline, speaker labels, original text, and translations" width="960">
+<img src="./apps/docs/public/screenshots/demo-mode.png" alt="Demo session with a timeline, speaker labels, original text, and translations" width="960">
 
 **Turn every conversation into shared, lasting knowledge.**
 
@@ -62,8 +62,9 @@ Setup, shortcuts, models, configuration, and troubleshooting live in the **[docu
 ```bash
 git clone https://github.com/QinYangWang/baribari.git
 cd baribari
-npm install          # Linux may need: npm install --force
-npm run build
+corepack enable
+pnpm install --frozen-lockfile
+pnpm build
 ```
 
 Contributions welcome. Open an issue or PR on [GitHub](https://github.com/QinYangWang/baribari).

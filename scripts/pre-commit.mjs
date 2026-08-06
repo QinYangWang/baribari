@@ -24,7 +24,7 @@ function run(label, cmd, args) {
 }
 
 console.log("pre-commit · baribari");
-run("typecheck", "npm", ["run", "typecheck"]);
+run("typecheck", "pnpm", ["run", "typecheck"]);
 // Catalog key parity is required; hardcoded scan is advisory (not --strict)
-run("check:i18n", "npm", ["run", "check:i18n"]);
+run("check:i18n", "pnpm", ["run", "check:i18n"]);
 console.log("\n✓ pre-commit ok\n");

@@ -14,9 +14,10 @@ baribari.config.json
 *.log
 .idea/
 .vscode/
+*.tgz
 
-# Veka / Astro docs
-docs/dist/
-docs/.astro/
-docs/node_modules/
+# Astro docs (apps/docs)
+apps/docs/dist/
+apps/docs/.astro/
+apps/docs/node_modules/
 fixtures/
