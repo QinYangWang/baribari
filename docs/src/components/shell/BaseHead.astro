@@ -26,7 +26,11 @@ const {
 
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<link rel="icon" type="image/svg+xml" href={withBase(SITE.favicon)} />
+<link rel="icon" type="image/png" href={withBase(SITE.favicon)} />
+<link rel="icon" type="image/png" sizes="32x32" href={withBase("/favicon-32.png")} />
+<link rel="icon" type="image/png" sizes="48x48" href={withBase("/favicon-48.png")} />
+<link rel="shortcut icon" href={withBase("/favicon.ico")} />
+<link rel="apple-touch-icon" sizes="180x180" href={withBase("/apple-touch-icon.png")} />
 <meta
   name="theme-color"
   content="#f8f5f0"
@@ -48,14 +52,20 @@ const {
   {tags}
 />
 
-{/* Maple Mono CN — Latin + CJK monospace (subsetted woff2) */}
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
 <link
   rel="stylesheet"
-  href="https://cdn.jsdelivr.net/npm/@automann/maple-mono-cn@7.9.2/dist/regular.css"
+  href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap"
 />
 <link
   rel="stylesheet"
-  href="https://cdn.jsdelivr.net/npm/@automann/maple-mono-cn@7.9.2/dist/medium.css"
+  href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/lxgwwenkai-regular.css"
+/>
+<link
+  rel="stylesheet"
+  href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/lxgwwenkai-bold.css"
 />
 
 <link

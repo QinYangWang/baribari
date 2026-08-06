@@ -6,7 +6,7 @@ export const SITE = {
   author: "baribari contributors",
   url: "https://qinyangwang.github.io/baribari",
   image: "/screenshots/demo-mode.png",
-  favicon: "/favicon.svg",
+  favicon: "/favicon.png",
 };
 
 /** Site base path (GitHub project Pages). No trailing slash except root. */

@@ -1,10 +1,10 @@
 <div align="center">
 
-<img src="./docs/public/favicon.svg" alt="baribari" width="72">
+<img src="./docs/public/brand/baribari-logo.png" alt="baribari" width="72">
 
 # baribari
 
-[ドキュメント](https://qinyangwang.github.io/baribari/ja/) · [インストール](https://qinyangwang.github.io/baribari/ja/install) · [クイックスタート](https://qinyangwang.github.io/baribari/ja/quick-start) · [ブログ](https://qinyangwang.github.io/baribari/ja/blog/)
+[ドキュメント](https://qinyangwang.github.io/baribari/ja/) · [インストール](https://qinyangwang.github.io/baribari/wiki/ja/start/install/) · [クイックスタート](https://qinyangwang.github.io/baribari/wiki/ja/start/quick-start/)
 
 [English](./README.md) · [中文](./README.zh.md) · **日本語**
 

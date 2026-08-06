@@ -15,7 +15,7 @@
     h4,
     h5,
     h6 {
-      font-family: var(--font-mono-stack, var(--font-mono));
+      font-family: var(--font-display-stack, var(--font-serif));
     }
 
     h1 {
