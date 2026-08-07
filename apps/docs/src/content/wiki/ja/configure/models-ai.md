@@ -1,6 +1,6 @@
 ---
 title: "モデルと AI"
-description: "ローカル ASR モデル 既定は SenseVoice です。TUI の Settings → Speech ASR → ASR model で ← / → により SenseVoice、Fun ASR Nano、ReazonSpeech を切り替えます。 コンポーネント 役割 入手 Silero "
+description: "ローカルの ASR、VAD、話者モデルを選択・切り替えし、任意の AI 補正、翻訳、要約を設定します。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["configure", "models", "ai"]

@@ -1,6 +1,6 @@
 ---
 title: "ファイルとパス"
-description: "Config, session, roster, and model file locations."
+description: "設定、モデル、セッション、録音、グローバル声紋名簿の既定パス、形式、上書き規則を説明します。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["reference", "paths"]

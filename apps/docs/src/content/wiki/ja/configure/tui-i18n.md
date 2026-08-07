@@ -1,6 +1,6 @@
 ---
 title: "TUI と i18n"
-description: "レイアウト ライブ画面は、話者一覧、文字起こし（履歴と 1 行の live 状態）、サイドバー（デバイス、録音、共有）の三つの領域で構成されます。 s で設定を開くと、TUI を終了せずに表示言語、音声認識、AI、音声、共有、VAD の各項目を変更できます。 Live vs final UI 保存 "
+description: "legacy と Rezi TUI のレイアウト、ショートカット、ライブ字幕と確定字幕の状態、日中英 UI の切り替えを説明します。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["configure", "tui", "i18n"]

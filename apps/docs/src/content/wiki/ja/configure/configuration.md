@@ -1,6 +1,6 @@
 ---
 title: "設定"
-description: "設定ディレクトリ 既定（ BARIBARI CONFIG DIR で上書き可）： text ~/.config/baribari/ ├── config.json 永続設定 ├── replace.json ローカル非 AI 辞書と整形 ├── models/ VAD / ASR / 話者モデル ├"
+description: "設定ディレクトリ、config.json、環境変数による上書きを理解し、モデル、録音、共有、VAD を安全に調整します。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["configure"]

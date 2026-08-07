@@ -1,6 +1,6 @@
 ---
 title: "会话与回放"
-description: "自动保存 每次实时会议会创建： text ~/.config/baribari/sessions/<session id / meta.json transcript.jsonl 每行一条最终 Segment JSON speakers.json audio.wav 开启录音 (r) / 续录+录音"
+description: "了解会议如何自动保存，并使用 session 与 resume 查找、回放、续录、重命名和删除会话。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["use", "sessions"]

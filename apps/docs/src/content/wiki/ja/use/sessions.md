@@ -1,6 +1,6 @@
 ---
 title: "セッションと再開"
-description: "自動保存 ライブ会議ごとに次が作られます。 text ~/.config/baribari/sessions/<session id / meta.json transcript.jsonl 行ごとに確定 Segment JSON speakers.json audio.wav 録音 (r) / 続"
+description: "会議の自動保存と、session・resume による検索、再生、続行、名前変更、削除の方法を説明します。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["use", "sessions"]

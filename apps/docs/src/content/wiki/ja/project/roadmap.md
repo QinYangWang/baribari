@@ -1,6 +1,6 @@
 ---
 title: "ロードマップ"
-description: "Turn live speech into understanding people can share, revisit, and build on — without giving up control of the audio. This board communicates priority"
+description: "ローカル会議文字起こしから Headless サービス、デスクトップ、翻訳音声、会話練習へ進む優先順位を確認します。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["project", "roadmap"]

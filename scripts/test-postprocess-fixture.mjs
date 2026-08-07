@@ -7,10 +7,11 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
-const require = createRequire(import.meta.url);
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const cliRoot = path.join(root, "apps", "cli");
+const require = createRequire(path.join(cliRoot, "package.json"));
 const sherpa = require("sherpa-onnx-node");
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const toFileUrl = (p) =>
   "file:///" + path.resolve(p).replace(/\\/g, "/");
 const {
@@ -18,9 +19,9 @@ const {
   ensureReplaceExample,
   replaceJsonPath,
   loadPostprocessConfig,
-} = await import(toFileUrl(path.join(root, "dist/postprocess.js")));
+} = await import(toFileUrl(path.join(cliRoot, "dist/postprocess.js")));
 const { joinUtterance } = await import(
-  toFileUrl(path.join(root, "dist/speaker-turn.js")),
+  toFileUrl(path.join(cliRoot, "dist/speaker-turn.js")),
 );
 
 const SAMPLE_RATE = 16000;

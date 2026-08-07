@@ -1,6 +1,6 @@
 ---
 title: "CLI 参考"
-description: "text baribari [选项] 开始实时转写（默认） baribari setup [选项] 检查 / 下载模型 baribari paths config 打印配置与模型路径 baribari devices 列出麦克风 baribari doctor 诊断运行环境 baribari ses"
+description: "查阅 baribari 命令、全局选项、setup、session、resume、join 与 shell 补全的完整用法。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["reference", "cli"]

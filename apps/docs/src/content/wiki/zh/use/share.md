@@ -1,6 +1,6 @@
 ---
 title: "局域网共享"
-description: "一台主机跑识别；同一网络上的同伴只需看 最终字幕 ，无需安装模型。 主机 bash baribari share 或在实时 / 回放 TUI 内按 h 切换 默认端口 8787 。可用 share port 修改： bash baribari share share port 8788 主机侧栏会显"
+description: "在局域网内共享最终字幕，让其他设备通过浏览器或 join 命令实时查看会议内容。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["use", "share"]

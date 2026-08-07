@@ -10,7 +10,7 @@ growthStage: "budding"
 ## Stages (live)
 
 1. **Capture** — mic / loopback / both → float32 PCM @ 16 kHz.
-2. **VAD (Silero)** — endpointing into speech chunks (`src/transcribe.ts`).
+2. **VAD (Silero)** — endpointing into speech chunks (`apps/cli/src/transcribe.ts`).
 3. **ASR (SenseVoice)** — offline decode of each chunk; language `auto|zh|en|ja|ko|yue`.
 4. **Speaker ID** — selected embedding model on the chunk; multi-window vote + template bank (`speaker-tracker.ts`).
 5. **Turn merge** — optional coalesce of same-speaker micro-finals (`speaker-turn.ts`).
@@ -33,7 +33,7 @@ SenseVoice decodes complete speech segments rather than individual streaming tok
 
 ## VAD presets
 
-Defined in `src/types.ts` as `VAD_PRESETS`. TUI: Settings → VAD preset.
+Defined in `apps/cli/src/types.ts` as `VAD_PRESETS`. TUI: Settings → VAD preset.
 
 | Id | minSilence | maxSpeech | Notes |
 |----|------------|-----------|--------|

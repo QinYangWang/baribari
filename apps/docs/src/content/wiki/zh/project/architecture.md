@@ -1,6 +1,6 @@
 ---
 title: "架构"
-description: "产品边界 掌控输入： 本地 ASR 是默认路径，云端 AI 必须显式开启。 理解现场： 字幕、说话人、设备与共享状态留在一个连贯客户端里。 保留上下文： 会议是可重新打开的会话，不是一次性的终端输出。 开放输出： 会话和版本化字幕事件可以继续支持搜索、Headless 共享、自动化与语音应用。 保留"
+description: "了解 baribari 的本地优先架构、转录数据流、会话边界，以及 CLI、Headless 与未来客户端的演进方向。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["project", "architecture"]
@@ -26,7 +26,7 @@ TUI 是第一个客户端，但不是架构边界。长期边界是本地语音�
 | ASR / VAD / 声纹 | `sherpa-onnx-node`（SenseVoice、Fun-ASR-Nano、ReazonSpeech、Silero VAD、3D-Speaker CAM++ / ERes2Net-large） |
 | 采集 | `node-cpal` + `bionic-audio`（麦；Windows loopback/both） |
 | 共享 | `ws` + 简易 HTTP 页 |
-| TUI | 自研 ANSI（`src/tui.ts`），非 Ink/Blessed |
+| TUI | 自研 ANSI（`apps/cli/src/tui.ts`），非 Ink/Blessed |
 
 ## 总体数据流
 
@@ -49,20 +49,22 @@ TUI 是第一个客户端，但不是架构边界。长期边界是本地语音�
 
 | 路径 | 职责 |
 |------|------|
-| `src/index.ts` | CLI 入口与直播会话编排 |
-| `src/transcribe.ts` | VAD + ASR 泵、录音、VAD/音源热更 |
-| `src/tui.ts` | 全屏直播 UI + 设置 |
-| `src/resume-tui.ts` | 会话浏览、播放、续录、AI 工具 |
-| `src/session.ts` | 路径、meta、jsonl、多段音频、删除安全 |
-| `src/speaker-tracker.ts` | 模板库 ID + 多窗投票 + 滞后 |
-| `src/speaker-models.ts` | 声纹模型目录（路径、默认阈值） |
-| `src/speaker-library.ts` | 全局 `roster.json` |
-| `src/speaker-turn.ts` | AI 前同说话人合并 |
-| `src/postprocess.ts` | 本地词典 / 清理 |
-| `src/ai.ts` | Chat Completions + Provider 预设 |
-| `src/share-*.ts` | 局域网主机 / 加入 |
-| `src/setup.ts` | 首次界面语言 + 模型下载 |
-| `src/i18n/` | zh / ja / en |
+| `apps/cli/src/index.ts` | CLI 入口与直播会话编排 |
+| `apps/cli/src/transcribe.ts` | VAD + ASR 泵、录音、VAD/音源热更 |
+| `apps/cli/src/tui.ts` | 全屏直播 UI + 设置 |
+| `apps/cli/src/resume-tui.ts` | 会话浏览、播放、续录、AI 工具 |
+| `apps/cli/src/session.ts` | 路径、meta、jsonl、多段音频、删除安全 |
+| `apps/cli/src/speaker-tracker.ts` | 模板库 ID + 多窗投票 + 滞后 |
+| `apps/cli/src/speaker-models.ts` | 声纹模型目录（路径、默认阈值） |
+| `apps/cli/src/speaker-library.ts` | 全局 `roster.json` |
+| `apps/cli/src/speaker-turn.ts` | AI 前同说话人合并 |
+| `apps/cli/src/postprocess.ts` | 本地词典 / 清理 |
+| `apps/cli/src/ai.ts` | Chat Completions + Provider 预设 |
+| `apps/cli/src/share-*.ts` | 局域网主机 / 加入 |
+| `apps/cli/src/setup.ts` | 首次界面语言 + 模型下载 |
+| `apps/cli/src/settings.ts` | `config.json` 读写 |
+| `apps/cli/src/paths.ts` | 配置 / 模型 / 会话根路径 |
+| `apps/cli/src/i18n/` | zh / ja / en |
 | `apps/docs/` | 本设计站（Veka (Astro)） |
 
 ## 配置布局

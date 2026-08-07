@@ -1,6 +1,6 @@
 ---
 title: "ライブ文字起こし"
-description: "Live transcription keys, layout, and capture flow."
+description: "マイクまたはシステム音声を選び、字幕の状態を理解し、TUI から文字起こし、録音、共有を操作します。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["use", "tui"]

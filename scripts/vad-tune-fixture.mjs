@@ -9,12 +9,13 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
-const require = createRequire(import.meta.url);
-const sherpa = require("sherpa-onnx-node");
-const ffmpeg = require("ffmpeg-static");
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
+const cliRoot = path.join(root, "apps", "cli");
+const requireRoot = createRequire(import.meta.url);
+const requireCli = createRequire(path.join(cliRoot, "package.json"));
+const sherpa = requireCli("sherpa-onnx-node");
+const ffmpeg = requireRoot("ffmpeg-static");
 
 const FIXTURE = path.join(root, "fixtures/meetings/ja-loanwords");
 const M4A = path.join(FIXTURE, "videoplayback.m4a");
@@ -115,7 +116,7 @@ function readSamples(limitSec = 0) {
 }
 
 function runVad(samples, vadCfg) {
-  // 2nd arg is bufferSizeInSeconds (same as src/transcribe.ts), not samples
+  // 2nd arg is bufferSizeInSeconds (same as apps/cli/src/transcribe.ts), not samples
   const vad = new sherpa.Vad(
     {
       sileroVad: {

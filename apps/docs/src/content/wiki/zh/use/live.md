@@ -1,6 +1,6 @@
 ---
 title: "实时转写"
-description: "Live transcription keys, layout, and capture flow."
+description: "选择麦克风或系统音频，理解实时字幕状态，并使用 TUI 快捷键控制转录、录音与共享。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["use", "tui"]

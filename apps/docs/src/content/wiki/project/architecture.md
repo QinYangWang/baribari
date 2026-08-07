@@ -28,7 +28,7 @@ The TUI is the first client, not the architectural boundary. The long-term bound
 | ASR / VAD / spk | `sherpa-onnx-node` (SenseVoice, Fun-ASR-Nano, ReazonSpeech, Silero VAD, 3D-Speaker CAM++ / ERes2Net-large) |
 | Capture | `node-cpal` + `bionic-audio` (mic; Windows loopback/both) |
 | Share | `ws` + small HTTP page |
-| TUI | Custom ANSI (`src/tui.ts`), not Ink/Blessed |
+| TUI | Custom ANSI (`apps/cli/src/tui.ts`), not Ink/Blessed |
 
 ## High-level flow
 
@@ -70,22 +70,22 @@ LAN participants see finalized captions and translations in a browser without ru
 
 | Path | Role |
 |------|------|
-| `src/index.ts` | CLI entry, wiring, live session loop |
-| `src/transcribe.ts` | VAD + ASR pump, record, hot-reload VAD/source |
-| `src/tui.ts` | Live fullscreen UI + settings |
-| `src/resume-tui.ts` | Session browser, playback, continue, AI tools |
-| `src/session.ts` | Paths, meta, jsonl, multi-clip audio, delete safety |
-| `src/speaker-tracker.ts` | Template-bank ID + multi-window voting + hysteresis |
-| `src/speaker-models.ts` | Speaker embedding catalog (paths, defaults) |
-| `src/speaker-library.ts` | Global `roster.json` |
-| `src/speaker-turn.ts` | Same-speaker coalesce before AI |
-| `src/postprocess.ts` | Local dict / cleanup |
-| `src/ai.ts` | Chat completions + provider presets |
-| `src/share-server.ts` / `share-client.ts` | LAN host / join |
-| `src/setup.ts` | First-run UI lang + model download |
-| `src/settings.ts` | `config.json` load/save |
-| `src/paths.ts` | Config/models/session roots |
-| `src/i18n/` | zh / ja / en message trees |
+| `apps/cli/src/index.ts` | CLI entry, wiring, live session loop |
+| `apps/cli/src/transcribe.ts` | VAD + ASR pump, record, hot-reload VAD/source |
+| `apps/cli/src/tui.ts` | Live fullscreen UI + settings |
+| `apps/cli/src/resume-tui.ts` | Session browser, playback, continue, AI tools |
+| `apps/cli/src/session.ts` | Paths, meta, jsonl, multi-clip audio, delete safety |
+| `apps/cli/src/speaker-tracker.ts` | Template-bank ID + multi-window voting + hysteresis |
+| `apps/cli/src/speaker-models.ts` | Speaker embedding catalog (paths, defaults) |
+| `apps/cli/src/speaker-library.ts` | Global `roster.json` |
+| `apps/cli/src/speaker-turn.ts` | Same-speaker coalesce before AI |
+| `apps/cli/src/postprocess.ts` | Local dict / cleanup |
+| `apps/cli/src/ai.ts` | Chat completions + provider presets |
+| `apps/cli/src/share-server.ts` / `share-client.ts` | LAN host / join |
+| `apps/cli/src/setup.ts` | First-run UI lang + model download |
+| `apps/cli/src/settings.ts` | `config.json` load/save |
+| `apps/cli/src/paths.ts` | Config/models/session roots |
+| `apps/cli/src/i18n/` | zh / ja / en message trees |
 | `apps/docs/` | This design site (Veka (Astro)) |
 
 ## Config layout

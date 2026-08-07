@@ -1,32 +1,26 @@
 {
-  "name": "baribari",
-  "version": "1.7.0",
-  "description": "Real-time meeting transcription CLI (SenseVoice + VAD + speaker ID + AI + LAN share)",
+  "name": "baribari-workspace",
+  "private": true,
+  "description": "baribari monorepo workspace (CLI + docs)",
   "type": "module",
-  "main": "dist/index.js",
-  "bin": {
-    "baribari": "dist/index.js"
+  "packageManager": "pnpm@11.20.0",
+  "engines": {
+    "node": ">=18"
   },
-  "files": [
-    "dist",
-    "README.md",
-    "README.zh.md",
-    "README.ja.md"
-  ],
   "scripts": {
-    "build": "tsc && node -e \"const fs=require('fs');const p='dist/index.js';let s=fs.readFileSync(p,'utf8');if(!s.startsWith('#!'))fs.writeFileSync(p,'#!/usr/bin/env node\\n'+s);\"",
-    "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
-    "typecheck": "tsc --noEmit",
-    "check:i18n": "node scripts/check-i18n.mjs",
-    "check:i18n:strict": "node scripts/check-i18n.mjs --strict",
-    "test": "pnpm run test:ai-guard && pnpm run test:speaker && pnpm run test:tui-rezi && pnpm run check:i18n",
-    "test:ai-guard": "tsx scripts/test-ai-translation-guard.ts",
-    "test:speaker": "tsx scripts/test-speaker-id.ts",
-    "test:tui-rezi": "tsx scripts/test-tui-rezi.ts",
+    "build": "pnpm --filter baribari build",
+    "start": "pnpm --filter baribari start",
+    "dev": "pnpm --filter baribari dev",
+    "typecheck": "pnpm --filter baribari typecheck",
+    "check:i18n": "pnpm --filter baribari check:i18n",
+    "check:i18n:strict": "pnpm --filter baribari check:i18n:strict",
+    "test": "pnpm --filter baribari test",
+    "test:ai-guard": "pnpm --filter baribari test:ai-guard",
+    "test:speaker": "pnpm --filter baribari test:speaker",
+    "test:tui-rezi": "pnpm --filter baribari test:tui-rezi",
+    "test:package-root": "pnpm --filter baribari test:package-root",
     "precommit": "node scripts/pre-commit.mjs",
     "hooks:install": "git config core.hooksPath .githooks",
-    "prepublishOnly": "pnpm run typecheck && pnpm run check:i18n && pnpm run build",
     "fixtures:meetings": "node scripts/generate-meeting-fixtures.mjs",
     "docs:dev": "pnpm --filter baribari-docs dev",
     "docs:build": "pnpm --filter baribari-docs build",
@@ -34,44 +28,13 @@
     "pack:check": "node scripts/pack-check.mjs",
     "security:check": "pnpm audit --audit-level high && pnpm audit signatures"
   },
-  "engines": {
-    "node": ">=18"
-  },
-  "packageManager": "pnpm@11.20.0",
-  "keywords": [
-    "asr",
-    "speech-to-text",
-    "sherpa-onnx",
-    "sensevoice",
-    "vad",
-    "meeting",
-    "transcription",
-    "cli"
-  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/QinYangWang/baribari.git"
   },
-  "bugs": {
-    "url": "https://github.com/QinYangWang/baribari/issues"
-  },
-  "homepage": "https://github.com/QinYangWang/baribari#readme",
   "license": "MIT",
-  "dependencies": {
-    "@rezi-ui/core": "0.1.0-beta.2",
-    "@rezi-ui/node": "0.1.0-beta.2",
-    "bionic-audio": "1.1.1",
-    "commander": "13.1.0",
-    "node-cpal": "0.1.1",
-    "sherpa-onnx-node": "1.13.4",
-    "ws": "8.21.1"
-  },
   "devDependencies": {
-    "@types/node": "22.20.1",
-    "@types/ws": "8.18.1",
     "ffmpeg-static": "5.3.0",
-    "node-edge-tts": "1.2.10",
-    "tsx": "4.23.1",
-    "typescript": "5.9.3"
+    "node-edge-tts": "1.2.10"
   }
 }

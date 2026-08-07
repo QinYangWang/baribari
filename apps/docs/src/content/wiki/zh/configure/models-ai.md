@@ -1,6 +1,6 @@
 ---
 title: "模型与 AI"
-description: "本地 ASR 模型 默认 SenseVoice。TUI 中打开 设置 → 语音识别 → ASR 模型 ，用 ← / → 在 SenseVoice、Fun ASR Nano、ReazonSpeech 间切换。 组件 作用 获取方式 Silero VAD 语音切分 baribari setup down"
+description: "选择和切换本地 ASR、VAD 与说话人模型，并配置可选的 AI 纠错、翻译和总结能力。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["configure", "models", "ai"]

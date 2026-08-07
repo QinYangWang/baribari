@@ -1,6 +1,6 @@
 ---
 title: "文件与路径"
-description: "Config, session, roster, and model file locations."
+description: "了解配置、模型、会话、录音和全局声纹名册的默认路径、文件格式与覆盖规则。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["reference", "paths"]

@@ -1,6 +1,6 @@
 ---
 title: "故障排查"
-description: "快速检查 bash baribari doctor baribari paths baribari devices baribari setup doctor 会报告音频设备、模型是否齐全及常见环境问题。 没有字幕 1. 确认麦克风（Windows 上还有 loopback）已选中 — bariba"
+description: "使用 doctor、paths、devices 和 setup 定位音频设备、模型下载、识别与终端显示问题。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["help"]

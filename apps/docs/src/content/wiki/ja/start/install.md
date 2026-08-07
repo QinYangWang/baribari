@@ -1,6 +1,6 @@
 ---
 title: "インストール"
-description: "要件 Node.js 18 以上 利用可能なマイク（Windows はシステム音声 / loopback にも対応） モデル用のディスク容量（VAD + ASR。話者モデルは任意） Linux と macOS は現在マイク入力が中心です。Windows は mic 、 loopback 、 both"
+description: "Windows、macOS、Linux に baribari を導入し、音声デバイスを準備してローカルモデルを初期化します。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["start", "install"]

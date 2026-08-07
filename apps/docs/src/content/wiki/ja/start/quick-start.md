@@ -1,6 +1,6 @@
 ---
 title: "クイックスタート"
-description: "First meeting, demo mode, and the day-to-day loop."
+description: "インストールとモデル取得から Demo または最初の会議を始め、文字起こし、保存、再開の基本操作を確認します。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["start", "guide"]

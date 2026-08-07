@@ -1,6 +1,6 @@
 ---
 title: "LAN 共有"
-description: "1 台のホストが ASR を実行し、同じネットワークの参加者が 確定字幕 だけを追います。モデルのインストールは不要です。 ホスト bash baribari share またはライブ / 再開 TUI 内で h 既定ポートは 8787 。変更は share port ： bash baribari"
+description: "確定字幕を LAN 内で共有し、ほかの端末からブラウザまたは join コマンドで会議を追跡します。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["use", "share"]

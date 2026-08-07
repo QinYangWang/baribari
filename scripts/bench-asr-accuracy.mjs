@@ -8,11 +8,12 @@ import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
 
-const require = createRequire(import.meta.url);
-const sherpa = require("sherpa-onnx-node");
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const cliRoot = path.join(root, "apps", "cli");
+const require = createRequire(path.join(cliRoot, "package.json"));
+const sherpa = require("sherpa-onnx-node");
 const { postprocessText } = await import(
-  pathToFileURL(path.join(root, "dist/postprocess.js")).href
+  pathToFileURL(path.join(cliRoot, "dist/postprocess.js")).href
 );
 
 const SR = 16000;

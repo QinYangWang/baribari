@@ -1,6 +1,6 @@
 ---
 title: "TUI 与界面多语言"
-description: "直播布局 1. 说话人 — 名册 + 本场说话人、改名、合并、指派 2. 转写 — final 历史 + 底部一条 live 3. 侧栏 — 设备、录音、共享 URL 按 s 打开设置，无需退出 TUI 即可调整界面语言、语音识别、AI、音频、共享和 VAD 选项。 Live vs final ki"
+description: "了解 legacy 与 Rezi TUI 的布局、快捷键、实时与最终字幕状态，以及中英日界面的切换方式。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["configure", "tui", "i18n"]
@@ -9,9 +9,9 @@ growthStage: "evergreen"
 ---
 ## 直播布局
 
-1. **说话人** — 名册 + 本场说话人、改名、合并、指派  
-2. **转写** — final 历史 + 底部一条 **live**  
-3. **侧栏** — 设备、录音、共享 URL  
+1. **说话人** — 名册 + 本场说话人、改名、合并、指派
+2. **转写** — final 历史 + 底部一条 **live**
+3. **侧栏** — 设备、录音、共享 URL
 
 ![实时转写界面，左侧显示说话人，右侧显示正在生成的日文字幕](/baribari/screenshots/live-transcription.png)
 
@@ -69,6 +69,6 @@ ReazonSpeech，还是三个模型都安装。无人值守安装可使用 `--yes`
 
 ## 工程
 
-- `src/i18n/locales/{zh,ja,en}.ts`  
+- `apps/cli/src/i18n/locales/{zh,ja,en}.ts`
 - `pnpm check:i18n`
 - 新增文案必须三语 + 类型一并改

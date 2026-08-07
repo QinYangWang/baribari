@@ -6,7 +6,7 @@
  *  1. Locale key trees (en as canonical)
  *  2. zh / ja / en have the same key set
  *  3. No empty string values in catalogs
- *  4. Scan src/*.ts for likely hardcoded UI strings not using t()
+ *  4. Scan apps/cli/src/*.ts for likely hardcoded UI strings not using t()
  *
  * Usage:
  *   node scripts/check-i18n.mjs
@@ -21,10 +21,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
+const cliRoot = path.join(root, "apps", "cli");
 const strict = process.argv.includes("--strict");
 
-const localeDir = path.join(root, "src", "i18n", "locales");
-const srcDir = path.join(root, "src");
+const localeDir = path.join(cliRoot, "src", "i18n", "locales");
+const srcDir = path.join(cliRoot, "src");
 
 /** Flatten nested object to dotted keys → string values only. */
 function flatten(obj, prefix = "", out = {}) {
@@ -49,7 +50,7 @@ async function loadLocale(name) {
     const m = src.match(/const\s+(\w+)\s*=/);
     if (m) src += `\nexport default ${m[1]};\n`;
   }
-  const cacheDir = path.join(root, "node_modules", ".cache");
+  const cacheDir = path.join(cliRoot, "node_modules", ".cache");
   fs.mkdirSync(cacheDir, { recursive: true });
   const tmp = path.join(cacheDir, `i18n-check-${name}.mjs`);
   fs.writeFileSync(tmp, src);
@@ -129,7 +130,7 @@ function extractStrings(src) {
 
 function scanHardcoded(file, text) {
   const findings = [];
-  const rel = path.relative(root, file).replace(/\\/g, "/");
+  const rel = path.relative(cliRoot, file).replace(/\\/g, "/");
   const strings = extractStrings(text);
 
   for (const s of strings) {

@@ -134,11 +134,11 @@ A release must:
 
 1. Start from a clean, reviewed commit whose version matches the tag.
 2. Install from the frozen lockfile and run all required checks.
-3. Build the CLI workspace explicitly rather than recursively publishing every
-   workspace package.
+3. Build the CLI package (`apps/cli`) explicitly rather than recursively publishing
+   every workspace package.
 4. Inspect the package tarball and ensure it contains only intended runtime files,
    README files, and license material.
-5. Publish only the public `baribari` CLI package. Workspace infrastructure,
+5. Publish only the public `baribari` package from `apps/cli`. Workspace root,
    documentation, and desktop applications remain private packages.
 6. Produce provenance through the trusted publisher and keep npm account 2FA
    enabled for human operations.

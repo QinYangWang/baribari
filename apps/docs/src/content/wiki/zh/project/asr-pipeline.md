@@ -1,6 +1,6 @@
 ---
 title: "识别管线"
-description: "直播阶段 1. 采集 — mic / loopback / both → 16 kHz float32 PCM 2. VAD（Silero） — 切成语音段 3. ASR（SenseVoice） — 段级离线解码；语种 auto zh en ja ko yue 4. 说话人识别 — 计算声纹向量（e"
+description: "了解从音频采集、VAD 切段到 ASR、说话人识别、后处理、AI 与会话持久化的完整管线。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["project", "asr"]
@@ -33,7 +33,7 @@ SenseVoice 使用**离线分段识别**：程序需要先等待 VAD 判定一个
 
 ## VAD 预设
 
-`src/types.ts` 中 `VAD_PRESETS`。TUI：设置 → VAD 预设。
+`apps/cli/src/types.ts` 中 `VAD_PRESETS`。TUI：设置 → VAD 预设。
 
 | Id | minSilence | maxSpeech | 意图 |
 |----|------------|-----------|------|

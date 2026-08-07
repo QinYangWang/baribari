@@ -1,6 +1,6 @@
 ---
 title: "GitHub Pages でドキュメントを公開"
-description: "このドキュメントサイトのビルドと公開方法。"
+description: "Astro ドキュメントをローカルでビルドし、GitHub Actions から多言語サイトを GitHub Pages に公開します。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-06
 tags: ["project", "docs"]

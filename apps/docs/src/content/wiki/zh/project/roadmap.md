@@ -1,6 +1,6 @@
 ---
 title: "路线图"
-description: "Turn live speech into understanding people can share, revisit, and build on — without giving up control of the audio. This board communicates priority"
+description: "查看 baribari 从本地会议转录走向 Headless 服务、桌面客户端、翻译语音与口语练习的优先级。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["project", "roadmap"]

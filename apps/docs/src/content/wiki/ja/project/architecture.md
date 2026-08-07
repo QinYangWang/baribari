@@ -1,6 +1,6 @@
 ---
 title: "アーキテクチャ"
-description: "製品の境界 入力を管理する： ローカル ASR が既定で、クラウド AI は明示的かつ任意です。 その場を理解する： 字幕、話者、デバイス、共有状態を一貫したクライアントに集約します。 文脈を残す： 会議は使い捨ての端末出力ではなく、再開できるセッションです。 出力を開く： セッションとバージョン付"
+description: "ローカル優先の構成、文字起こしのデータフロー、セッション境界、CLI、Headless、将来のクライアントへの発展を説明します。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["project", "architecture"]
@@ -26,7 +26,7 @@ TUI は最初のクライアントであって、アーキテクチャの境界�
 | ASR / VAD / 声紋 | `sherpa-onnx-node` |
 | 収録 | `node-cpal` + `bionic-audio` |
 | 共有 | `ws` + 簡易 HTTP |
-| TUI | 自前 ANSI（`src/tui.ts`） |
+| TUI | 自前 ANSI（`apps/cli/src/tui.ts`） |
 
 ## データフロー
 
@@ -49,14 +49,14 @@ LAN 上の参加者は、ASR を自分の PC で実行しなくても、確定�
 
 | パス | 役割 |
 |------|------|
-| `index.ts` | CLI / ライブ配線 |
-| `transcribe.ts` | VAD+ASR |
-| `tui.ts` / `resume-tui.ts` | UI |
-| `session.ts` | セッションファイル |
-| `speaker-*.ts` | 話者 |
-| `postprocess.ts` / `ai.ts` | 整形 / LLM |
-| `share-*.ts` | LAN |
-| `i18n/` | zh · ja · en |
+| `apps/cli/src/index.ts` | CLI / ライブ配線 |
+| `apps/cli/src/transcribe.ts` | VAD+ASR |
+| `apps/cli/src/tui.ts` / `resume-tui.ts` | UI |
+| `apps/cli/src/session.ts` | セッションファイル |
+| `apps/cli/src/speaker-*.ts` | 話者 |
+| `apps/cli/src/postprocess.ts` / `ai.ts` | 整形 / LLM |
+| `apps/cli/src/share-*.ts` | LAN |
+| `apps/cli/src/i18n/` | zh · ja · en |
 | `apps/docs/` | 本サイト |
 
 ## 設定レイアウト

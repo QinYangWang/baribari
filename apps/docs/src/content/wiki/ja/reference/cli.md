@@ -1,6 +1,6 @@
 ---
 title: "CLI リファレンス"
-description: "text baribari [options] ライブ文字起こし開始（既定） baribari setup [options] モデル確認 / ダウンロード baribari paths config 設定とモデルパスを表示 baribari devices マイク一覧 baribari docto"
+description: "baribari のコマンド、共通オプション、setup、session、resume、join、シェル補完の使い方をまとめます。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["reference", "cli"]

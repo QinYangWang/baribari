@@ -1,6 +1,6 @@
 ---
 title: "トラブルシューティング"
-description: "まず確認 bash baribari doctor baribari paths baribari devices baribari setup doctor は音声デバイス、モデル有無、よくある環境問題を報告します。 字幕が出ない 1. マイク（Windows では loopback も）が選ばれ"
+description: "doctor、paths、devices、setup を使い、音声デバイス、モデル取得、認識、端末表示の問題を切り分けます。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["help"]

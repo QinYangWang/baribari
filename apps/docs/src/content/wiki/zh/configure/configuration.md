@@ -1,6 +1,6 @@
 ---
 title: "配置说明"
-description: "配置目录 默认（可用 BARIBARI CONFIG DIR 覆盖）： text ~/.config/baribari/ ├── config.json 持久化设置 ├── replace.json 本地非 AI 词典与清理 ├── models/ VAD / ASR / 说话人模型 ├── ses"
+description: "了解配置目录、配置文件与环境变量覆盖规则，并安全调整模型、录音、共享和 VAD 设置。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["configure"]

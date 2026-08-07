@@ -1,6 +1,6 @@
 ---
 title: "用 GitHub Pages 部署文档"
-description: "如何构建并发布本站文档。"
+description: "在本地构建 Astro 文档，并通过 GitHub Actions 将多语言站点部署到 GitHub Pages。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-06
 tags: ["project", "docs"]

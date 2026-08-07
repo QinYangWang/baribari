@@ -1,6 +1,6 @@
 ---
 title: "快速开始"
-description: "First meeting, demo mode, and the day-to-day loop."
+description: "从安装和模型下载开始，运行 Demo 或首场会议，并掌握日常转录、保存与回放流程。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["start", "guide"]

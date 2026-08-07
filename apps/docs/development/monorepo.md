@@ -21,25 +21,28 @@ contracts, and a future desktop client.
   npm package name.
 - Do not combine the workspace move with the engine/TUI architectural extraction.
 
-## Staged layout
+## Current layout
 
-The first migration keeps the publishable CLI at the repository root. This avoids
-duplicating the root README and license files or changing npm package contents while
-the engine is still tightly coupled to the TUI.
+The publishable CLI lives in `apps/cli`. The repository root is a private workspace
+orchestrator. Only one npm package is published: `baribari` from `apps/cli`.
 
 ```text
 baribari/
-├── package.json              # published baribari CLI and workspace root
+├── package.json              # private workspace orchestrator
 ├── pnpm-workspace.yaml
 ├── pnpm-lock.yaml
-├── src/                      # current CLI implementation
-├── scripts/                  # CLI tests and maintenance scripts
+├── scripts/                  # repo-wide tooling (pack-check, pre-commit, fixtures)
 ├── apps/
+│   ├── cli/                  # published npm package (name: baribari)
+│   │   ├── package.json
+│   │   ├── src/
+│   │   ├── dist/             # build output (not committed)
+│   │   └── scripts/          # CLI unit tests
 │   └── docs/                 # private Astro application
 └── packages/                 # added only when boundaries are extracted
 ```
 
-After the engine boundary exists, the intended layout is:
+Intended layout after engine boundary extraction:
 
 ```text
 baribari/
@@ -53,10 +56,6 @@ baribari/
 │   └── engine-node/          # Node audio, sherpa-onnx, models and translation
 └── package.json              # private orchestration root
 ```
-
-Moving the CLI into `apps/cli` is a separate migration. It may happen only after
-`npm pack` proves that README, license, executable permissions, shebang, declarations,
-source maps, and runtime native dependencies remain correct.
 
 ## Dependency direction
 
@@ -85,30 +84,16 @@ protocol <- core <- engine-node <- CLI sidecar
 - All applications under `apps/*` and libraries under `packages/*` are declared in
   `pnpm-workspace.yaml`.
 - Workspace applications and unpublished libraries set `private: true`.
+- The published CLI package (`apps/cli`, name `baribari`) is the only non-private
+  workspace package.
+- The private workspace root is intentionally versionless. Release versions live
+  only in `apps/cli/package.json`; documentation applications may keep private
+  implementation versions of their own.
 - Internal dependencies use `workspace:` ranges.
 - Root scripts use `pnpm --filter` so it is clear which application is built.
 - Do not rely on accidental hoisting. A package must declare everything it imports.
 - Supply-chain configuration and dependency procedures are defined in
   [`SECURITY.md`](../../../SECURITY.md).
-
-## Initial migration procedure
-
-1. Confirm the working tree is clean and record baseline results for typecheck,
-   tests, CLI build, docs build, and package contents.
-2. Create `pnpm-workspace.yaml` with `apps/*` and `packages/*` plus the security
-   settings from `SECURITY.md`.
-3. Pin the tested pnpm version in the root `package.json`.
-4. Move `docs/` to `apps/docs/` without changing routes, Astro `base`, output, or
-   page content.
-5. Update root scripts, `.gitignore`, hooks, documentation links, Pages paths, and
-   workflow cache configuration.
-6. Generate one `pnpm-lock.yaml`, review every allowed lifecycle script, and remove
-   both npm lockfiles.
-7. Change CI installs to frozen pnpm installs. Keep npm CLI only for the final npm
-   Trusted Publishing operation when required by the registry.
-8. Pin GitHub Actions to full commit SHAs with release comments.
-9. Run the acceptance checks below and compare the npm package tarball with the
-   baseline.
 
 ## Required root commands
 
@@ -126,9 +111,10 @@ pnpm security:check
 ```
 
 `test` may compose the existing focused test scripts until a test runner is
-introduced. `pack:check` must build and create or inspect the CLI tarball without
-publishing it. `security:check` must run the configured vulnerability and registry
-signature checks; it must not silently fix or mutate dependencies.
+introduced. `pack:check` must build and create or inspect the CLI tarball from
+`apps/cli` without publishing it. `security:check` must run the configured
+vulnerability and registry signature checks; it must not silently fix or mutate
+dependencies.
 
 ## Acceptance criteria
 
@@ -138,15 +124,17 @@ signature checks; it must not silently fix or mutate dependencies.
 - `pnpm docs:build` produces the same `/baribari/` GitHub Pages base and routes.
 - `pnpm pack:check` confirms the CLI tarball contains the executable `dist/index.js`,
   declarations, README files, and license, with no docs build or local data.
-- `node dist/index.js --help` and the packed CLI entry point still work.
-- Publish CI verifies that `vX.Y.Z` matches the CLI package version and publishes
-  only `baribari` through npm Trusted Publishing.
+- `node apps/cli/dist/index.js --help` and the packed CLI entry point still work.
+- `packageRoot()` resolves to the CLI package directory (install root), not the
+  monorepo repository root.
+- Publish CI verifies that `vX.Y.Z` matches `apps/cli` package version and publishes
+  only `baribari` from `apps/cli` through npm Trusted Publishing.
 - Pages CI deploys from `apps/docs/dist`.
 - No npm lockfile or nested pnpm lockfile remains.
 
 ## Future extraction sequence
 
-Once the workspace-only migration is stable:
+Once the workspace CLI relocation is stable:
 
 1. Extract `packages/protocol` with versioned engine commands and events.
 2. Introduce a UI-independent engine lifecycle and test it without a terminal.
@@ -154,8 +142,6 @@ Once the workspace-only migration is stable:
 4. Move native execution into `engine-node` or a dedicated sidecar entry point.
 5. Add `apps/desktop`; keep Tauri responsible for windows, tray, updates, and
    supervising the Node engine rather than reimplementing ASR.
-6. Consider moving the CLI to `apps/cli` only after package compatibility is
-   protected by an automated tarball test.
 
 Each stage should be independently releasable and must avoid changing session or
 event data without an explicit schema migration.

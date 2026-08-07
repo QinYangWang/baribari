@@ -7,9 +7,10 @@ import { execFileSync, execSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const cliDir = path.join(root, "apps", "cli");
 
 function run(label, cmd, args, opts = {}) {
   console.log(`▸ ${label}`);
@@ -23,9 +24,22 @@ function run(label, cmd, args, opts = {}) {
 
 run("build", "pnpm", ["run", "build"]);
 
+// Packaged README/LICENSE must stay byte-identical to the repo-root copies
+// (GitHub landing page vs npm package surface).
+for (const name of ["README.md", "README.zh.md", "README.ja.md", "LICENSE"]) {
+  const a = fs.readFileSync(path.join(root, name));
+  const b = fs.readFileSync(path.join(cliDir, name));
+  if (!a.equals(b)) {
+    console.error(
+      `pack:check: apps/cli/${name} differs from repository root ${name}`,
+    );
+    process.exit(1);
+  }
+}
+
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "baribari-pack-"));
 const packOut = execFileSync("pnpm", ["pack", "--pack-destination", tmp], {
-  cwd: root,
+  cwd: cliDir,
   encoding: "utf8",
 }).trim();
 const tgzLine = packOut
@@ -67,11 +81,32 @@ const forbidden = list.filter(
     f.startsWith("package/models/") ||
     f.startsWith("package/recordings/") ||
     f.startsWith("package/fixtures/") ||
+    f.startsWith("package/scripts/") ||
+    f.startsWith("package/src/") ||
     f === "package/pnpm-lock.yaml" ||
-    f === "package/pnpm-workspace.yaml",
+    f === "package/pnpm-workspace.yaml" ||
+    f === "package/tsconfig.json",
 );
 if (forbidden.length) {
   console.error("pack:check: unexpected package contents:\n" + forbidden.join("\n"));
+  process.exit(1);
+}
+
+const pkgJson = JSON.parse(
+  execSync(`tar -xOzf ${JSON.stringify(tgz)} package/package.json`, {
+    encoding: "utf8",
+  }),
+);
+if (pkgJson.name !== "baribari") {
+  console.error("pack:check: expected package name baribari, got", pkgJson.name);
+  process.exit(1);
+}
+if (pkgJson.private === true) {
+  console.error("pack:check: published package must not be private");
+  process.exit(1);
+}
+if (pkgJson.bin?.baribari !== "dist/index.js") {
+  console.error("pack:check: bin.baribari must be dist/index.js");
   process.exit(1);
 }
 
@@ -97,9 +132,9 @@ void mode;
 // Exercise the exact packed entry while resolving dependencies from the verified
 // workspace install. A published consumer gets these dependencies from its package
 // manager; the bare extraction above intentionally contains no node_modules.
-const installedModules = path.join(root, "node_modules");
+const installedModules = path.join(cliDir, "node_modules");
 if (!fs.existsSync(installedModules)) {
-  console.error("pack:check: workspace node_modules is missing");
+  console.error("pack:check: apps/cli/node_modules is missing");
   process.exit(1);
 }
 fs.symlinkSync(
@@ -111,5 +146,24 @@ execFileSync(process.execPath, [entry, "--help"], {
   cwd: root,
   stdio: "inherit",
 });
+
+// packageRoot() must resolve to the extracted package dir (contains package.json),
+// not the monorepo root.
+const pathsUrl = pathToFileURL(
+  path.join(extractDir, "package", "dist", "paths.js"),
+).href;
+const pathsMod = await import(pathsUrl);
+const resolvedRoot = pathsMod.packageRoot();
+const expectedRoot = path.join(extractDir, "package");
+if (path.resolve(resolvedRoot) !== path.resolve(expectedRoot)) {
+  console.error(
+    "pack:check: packageRoot() mismatch:\n",
+    "  got:",
+    resolvedRoot,
+    "\n  expected:",
+    expectedRoot,
+  );
+  process.exit(1);
+}
 
 console.log(`\n✓ pack:check ok (${list.length} files) ${path.basename(tgz)}`);

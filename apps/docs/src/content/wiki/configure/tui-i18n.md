@@ -84,7 +84,7 @@ Empty input → **English** (index 3). Digit N → `UI_LANGS[N-1]` (`zh`, `ja`, 
 
 ## i18n engineering
 
-- Trees: `src/i18n/locales/{zh,ja,en}.ts` + `types.ts` key structural type.
+- Trees: `apps/cli/src/i18n/locales/{zh,ja,en}.ts` + `types.ts` key structural type.
 - `pnpm check:i18n` — key parity; strict mode available.
 - Pre-commit hook runs typecheck + i18n check (`pnpm hooks:install`).
 

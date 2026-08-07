@@ -1,6 +1,6 @@
 ---
 title: "说话人"
-description: "两类问题 问题 机制 谁 说了这段？ 说话人 识别 （声纹匹配） 何时 换人？ VAD 静音切段 +（未来）diarization / 变点 baribari 目前给每个 VAD 段标一个说话人 ID，不做段内重叠分离。 声纹模型 模型 文件 默认阈值 说明 ERes2Net large （推荐） "
+description: "配置说话人识别模型与阈值，维护全局声纹名册，并在会议中改名、合并和指派说话人。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["use", "speakers"]

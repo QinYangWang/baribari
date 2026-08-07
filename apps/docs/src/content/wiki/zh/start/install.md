@@ -1,6 +1,6 @@
 ---
 title: "安装"
-description: "环境要求 Node.js 18 或更高 可用的麦克风（Windows 还支持系统声 / loopback） 足够存放模型的磁盘空间（VAD + ASR；说话人模型可选） Linux 与 macOS 目前以麦克风采集为主。Windows 支持 mic 、 loopback 与 both 。 从 npm"
+description: "在 Windows、macOS 或 Linux 安装 baribari，准备音频设备并完成本地模型初始化。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["start", "install"]

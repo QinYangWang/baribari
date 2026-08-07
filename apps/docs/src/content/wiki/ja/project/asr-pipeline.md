@@ -1,6 +1,6 @@
 ---
 title: "ASR パイプライン"
-description: "ライブ段階 1. 収録 → 16 kHz PCM 2. Silero VAD → 発話区間 3. SenseVoice → オフライン復号（ auto zh en ja ko yue ） 4. 話者 ID → embedding + 複数窓投票 5. ターン結合 → 同一話者の短い final を任"
+description: "音声収録、VAD 分割、ASR、話者識別、後処理、AI、セッション保存までのパイプラインを説明します。"
 createdAt: 2026-08-05
 updatedAt: 2026-08-05
 tags: ["project", "asr"]
