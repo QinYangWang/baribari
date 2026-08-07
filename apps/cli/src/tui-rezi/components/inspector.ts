@@ -1,188 +1,218 @@
 import { ui, type VNode } from "@rezi-ui/core";
 import { t } from "../../i18n/index.js";
-import { fmtClock, fmtDur, fmtRange } from "../format.js";
+import { fmtDur, fmtRange } from "../format.js";
 import type { LiveUiState } from "../types.js";
 import { col } from "../colors.js";
 
-function kv(label: string, value: string, tone?: "ok" | "warn" | "muted"): VNode {
-  const fg =
-    tone === "ok"
-      ? col.success
-      : tone === "warn"
-        ? col.warning
+function line(
+  value: string,
+  tone: "ok" | "warn" | "info" | "muted" = "muted",
+): VNode {
+  const fg = tone === "ok"
+    ? col.success
+    : tone === "warn"
+      ? col.warning
+      : tone === "info"
+        ? col.info
         : col.secondary;
-  return ui.row({ gap: 1, justify: "between" }, [
-    ui.text(label, { style: { fg: col.muted } }),
-    ui.text(value, { style: { fg }, textOverflow: "ellipsis" }),
-  ]);
+  return ui.text(value, {
+    style: { fg },
+    wrap: true,
+    textOverflow: "ellipsis",
+  });
+}
+
+function section(
+  icon: string,
+  title: string,
+  children: VNode[],
+  tone = col.accent,
+): VNode {
+  return ui.box(
+    {
+      border: "none",
+      borderBottom: true,
+      borderStyle: { fg: col.borderSoft },
+      pb: 1,
+      mb: 1,
+    },
+    [
+      ui.text(`${icon}  ${title}`, { style: { fg: tone, bold: true } }),
+      ...children,
+    ],
+  );
 }
 
 export function renderInspector(state: LiveUiState): VNode {
-  const title =
-    state.inspectorMode === "segment"
-      ? t("rezi.inspector.segment")
-      : state.inspectorMode === "speaker"
-        ? t("rezi.inspector.speaker")
-        : t("rezi.inspector.meeting");
-
-  const body: VNode[] = [];
+  const c = state.config;
+  const compact = state.layoutMode !== "wide" || state.rows < 28;
+  const body: VNode[] = [
+    ui.text(t("tui.sideTitle"), { style: { fg: col.accent, bold: true } }),
+    ui.spacer({ size: 1 }),
+  ];
 
   if (state.modelDownload) {
     const d = state.modelDownload;
     body.push(
-      ui.column({ gap: 0, mb: 1 }, [
-        ui.text(t("tui.modelDownload"), {
-          style: { fg: col.warning, bold: true },
-        }),
-        kv(t("tui.downloadModel"), d.name),
-        kv(
-          t("tui.downloadStage"),
-          d.stage === "extracting" ? t("tui.extracting") : t("tui.downloading"),
-        ),
-        kv(t("tui.downloadProgress"), `${Math.round(d.percent)}%`),
-      ]),
+      section(
+        "⇩",
+        t("tui.modelDownload"),
+        [
+          line(d.name, "warn"),
+          line(
+            d.stage === "extracting"
+              ? t("tui.extracting")
+              : t("tui.downloading"),
+          ),
+          ui.progress(Math.max(0, Math.min(1, d.percent / 100)), {
+            showPercent: true,
+            variant: "bar",
+            dsTone: "warning",
+          }),
+          d.background
+            ? line(t("rezi.live.backgroundDownload"), "info")
+            : line(t("rezi.live.foregroundDownload")),
+        ],
+        col.warning,
+      ),
     );
   }
 
-  if (state.inspectorMode === "segment" && state.selectedSegmentId) {
-    const seg = state.segments.find((s) => s.id === state.selectedSegmentId);
-    if (seg) {
-      const sp = state.speakers.find((s) => s.id === seg.speakerId);
-      body.push(
-        kv(t("rezi.inspector.time"), fmtClock(seg.wallMs)),
-        kv(
-          t("rezi.inspector.range"),
-          fmtRange(seg.startedAtMs, seg.endedAtMs),
-        ),
-        kv(
-          t("rezi.inspector.speakerName"),
-          sp?.displayName || t("common.unknownSpeaker"),
-        ),
-        kv(
-          t("rezi.inspector.state"),
-          seg.pending
-            ? t("status.aiProcessing")
-            : seg.isDraft
-              ? t("rezi.inspector.draft")
-              : t("rezi.inspector.final"),
-        ),
-      );
-      body.push(
-        ui.spacer({ size: 1 }),
-        ui.text(t("rezi.inspector.original"), {
-          style: { fg: col.muted, bold: true },
-        }),
-        ui.text(seg.originalText || "—", {
-          style: { fg: col.primary },
-          wrap: true,
-        }),
-      );
-      if (seg.translatedText) {
-        body.push(
-          ui.spacer({ size: 1 }),
-          ui.text(t("rezi.inspector.translation"), {
-            style: { fg: col.muted, bold: true },
-          }),
-          ui.text(seg.translatedText, {
-            style: { fg: col.success },
-            wrap: true,
-          }),
-        );
-      }
-    }
-  } else if (state.inspectorMode === "speaker" && state.selectedSpeakerId) {
-    const sp = state.speakers.find((s) => s.id === state.selectedSpeakerId);
-    if (sp) {
-      body.push(
-        kv(t("rezi.inspector.speakerName"), sp.displayName),
-        kv(t("tui.segs"), String(sp.segmentCount)),
-        kv(
-          t("rezi.inspector.state"),
-          sp.isActive ? t("tui.listening") : t("common.dash"),
-        ),
-      );
-    }
-  } else {
-    const c = state.config;
-    const listen = c.paused
-      ? t("tui.paused")
-      : state.recognizing
-        ? t("tui.recognizing")
-        : t("tui.listening");
+  body.push(
+    section("≋", t("rezi.status.audio"), [
+      line(`● ${sourceLabel(c.source)}`, "ok"),
+      line(c.deviceName || t("common.dash")),
+    ], col.info),
+    section("▣", t("rezi.status.recognition"), [
+      line(`${c.lang} · ${asrLabel(c.asrEngine)}`),
+      line(
+        `VAD ${t(`settings.vadPreset.${c.vadPresetId}`)} · ${c.vadSilence.toFixed(2)}s`,
+      ),
+    ]),
+  );
+
+  if (compact) {
     body.push(
-      kv(t("tui.device"), c.deviceName || t("common.dash")),
-      kv(t("tui.source"), sourceLabel(c.source)),
-      kv(t("tui.language"), c.lang),
-      kv(t("settings.items.asrEngine.label"), asrLabel(c.asrEngine)),
-      kv(
-        t("tui.aiEnh"),
-        c.aiEnabled
-          ? c.aiHasKey
-            ? t("common.on")
-            : t("common.openMissingKey")
-          : t("common.off"),
-        c.aiEnabled ? (c.aiHasKey ? "ok" : "warn") : "muted",
-      ),
-      kv(
-        t("tui.share"),
-        c.shareEnabled ? `:${c.sharePort}` : t("tui.shareOff"),
-        c.shareEnabled ? "ok" : "muted",
-      ),
-      kv(
-        t("tui.recState"),
-        c.recording ? t("tui.recording") : t("tui.notRecording"),
-        c.recording ? "warn" : "muted",
-      ),
-      kv(t("tui.vadPreset"), t(`settings.vadPreset.${c.vadPresetId}`)),
-      kv(t("tui.vadSilence"), `${c.vadSilence.toFixed(2)}s`),
-      kv(t("tui.vadMaxSpeech"), `${c.vadMaxSpeech.toFixed(0)}s`),
-      kv(t("tui.duration"), fmtDur(state.elapsedSec)),
-      kv(t("rezi.inspector.listenState"), listen),
+      section("◈", t("rezi.status.services"), [
+        line(
+          `AI ${c.aiEnabled ? `● ${t("rezi.status.enabled")}` : `○ ${t("common.off")}`}`,
+          c.aiEnabled ? "ok" : "muted",
+        ),
+        line(
+          `${t("footer.record")} ${c.recording ? `● ${t("tui.recording")}` : `○ ${t("tui.notRecording")}`}`,
+          c.recording ? "ok" : "muted",
+        ),
+        line(
+          `${t("footer.share")} ${c.shareEnabled ? `● ${shareAddress(c.shareHost, c.sharePort)}` : `○ ${t("tui.shareOff")}`}`,
+          c.shareEnabled ? "ok" : "muted",
+        ),
+        line(`${t("tui.duration")} · ${fmtDur(state.elapsedSec)}`),
+      ]),
     );
-    if (state.statusMessage) {
-      body.push(
-        ui.spacer({ size: 1 }),
-        ui.text(state.statusMessage, {
-          style: { fg: col.secondary },
-          wrap: true,
-        }),
-      );
-    }
+  } else {
+    body.push(
+      section("✧", "AI", [
+        line(
+          c.aiEnabled
+            ? `● ${c.aiHasKey ? t("rezi.status.enabled") : t("common.openMissingKey")}`
+            : `○ ${t("common.off")}`,
+          c.aiEnabled && c.aiHasKey ? "ok" : c.aiEnabled ? "warn" : "muted",
+        ),
+        state.aiBusy
+          ? line(t("status.aiProcessing"), "ok")
+          : line(t("rezi.status.idle")),
+      ], col.success),
+      section("◎", t("footer.record"), [
+        line(
+          c.recording
+            ? `● ${t("tui.recording")}`
+            : `○ ${t("tui.notRecording")}`,
+          c.recording ? "ok" : "muted",
+        ),
+      ]),
+      section("⌯", t("footer.share"), [
+        line(
+          c.shareEnabled
+            ? `● ${shareAddress(c.shareHost, c.sharePort)}`
+            : `○ ${t("tui.shareOff")}`,
+          c.shareEnabled ? "ok" : "muted",
+        ),
+      ], col.info),
+      section(
+        "◷",
+        t("tui.duration"),
+        [line(fmtDur(state.elapsedSec))],
+        col.blue,
+      ),
+    );
   }
+
+  const context = renderSelectionContext(state);
+  if (context) body.push(context);
 
   if (state.notice) {
-    const n = state.notice;
-    const fg =
-      n.kind === "error"
-        ? col.error
-        : n.kind === "warn"
-          ? col.warning
-          : n.kind === "success"
-            ? col.success
-            : col.info;
-    body.push(
-      ui.column({ gap: 0, mt: 1 }, [
-        ui.text(n.title, { style: { fg, bold: true } }),
-        ui.text(n.body, { style: { fg: col.secondary }, wrap: true }),
-      ]),
-    );
+    const tone = state.notice.kind === "error"
+      ? col.error
+      : state.notice.kind === "warn"
+        ? col.warning
+        : state.notice.kind === "success"
+          ? col.success
+          : col.info;
+    body.push(section("!", state.notice.title, [line(state.notice.body)], tone));
+  } else if (state.statusMessage) {
+    body.push(line(state.statusMessage));
   }
 
-  return ui.column({ gap: 0, width: 32, px: 1 }, [
-    ui.text(title, { style: { fg: col.accent, bold: true } }),
-    ui.spacer({ size: 1 }),
-    ...body,
-  ]);
+  return ui.column({ gap: 0, flex: 1 }, body);
 }
 
-function sourceLabel(s: string): string {
-  if (s === "loopback") return t("source.loopback");
-  if (s === "both") return t("source.both");
+function renderSelectionContext(state: LiveUiState): VNode | null {
+  if (state.inspectorMode === "segment" && state.selectedSegmentId) {
+    const seg = state.segments.find(
+      (item) => item.id === state.selectedSegmentId,
+    );
+    if (!seg) return null;
+    const speaker = state.speakers.find((item) => item.id === seg.speakerId);
+    return section("▤", t("rezi.inspector.segment"), [
+      line(
+        `${speaker?.displayName || t("common.unknownSpeaker")} · ${fmtRange(seg.startedAtMs, seg.endedAtMs)}`,
+      ),
+      line(
+        seg.isFinal
+          ? `✓ ${t("rezi.inspector.final")}`
+          : `◌ ${t("rezi.inspector.draft")}`,
+        seg.isFinal ? "ok" : "warn",
+      ),
+    ]);
+  }
+  if (state.inspectorMode === "speaker" && state.selectedSpeakerId) {
+    const speaker = state.speakers.find(
+      (item) => item.id === state.selectedSpeakerId,
+    );
+    if (!speaker) return null;
+    return section("♙", t("rezi.inspector.speaker"), [
+      line(speaker.displayName),
+      line(t("tui.segs", { n: speaker.segmentCount })),
+    ]);
+  }
+  return null;
+}
+
+function sourceLabel(source: string): string {
+  if (source === "loopback") return t("source.loopback");
+  if (source === "both") return t("source.both");
   return t("source.mic");
 }
 
 function asrLabel(engine: string): string {
   if (engine === "funasr-nano") return "Fun-ASR-Nano";
-  if (engine === "reazonspeech-ja") return t("settings.asrEngine.reazonSpeechName");
+  if (engine === "reazonspeech-ja") {
+    return t("settings.asrEngine.reazonSpeechName");
+  }
   return "SenseVoice";
+}
+
+function shareAddress(host: string, port: number): string {
+  const displayHost = host === "0.0.0.0" ? t("rezi.status.lan") : host;
+  return `${displayHost}:${port}`;
 }

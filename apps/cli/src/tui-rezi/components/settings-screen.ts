@@ -11,6 +11,7 @@ import {
 } from "../settings/catalog.js";
 import type { LiveUiState } from "../types.js";
 import { col } from "../colors.js";
+import { renderAppHeader } from "./app-header.js";
 
 export interface SettingsHandlers {
   onSelectCategory: (id: LiveUiState["settingsCategory"]) => void;
@@ -27,80 +28,130 @@ export function renderSettingsScreen(
   handlers: SettingsHandlers,
   valueText: (key: string) => string,
 ): VNode {
-  const wide = state.cols >= 100;
+  const wide = state.cols >= 120;
+  const medium = state.cols >= 84;
   const fields = fieldsForCategory(
     state.settingsCategory,
     state.advancedVadOpen,
   );
 
-  const nav = ui.column({ gap: 0, width: 22, px: 1 }, [
-    ui.text(t("tui.settingsTitle"), {
-      style: { fg: col.accent, bold: true },
-    }),
-    ui.spacer({ size: 1 }),
+  const nav = ui.column({ gap: 1, flex: 1 }, [
     ...SETTINGS_CATEGORIES.map((cat) => {
       const selected = state.settingsCategory === cat.id;
       return ui.button({
         id: `settings-cat-${cat.id}`,
-        label: `${selected ? "› " : "  "}${categoryLabel(cat.id)}`,
+        label: `${categoryIcon(cat.id)}  ${categoryLabel(cat.id)}`,
+        accessibleLabel: `${categoryLabel(cat.id)}${selected ? `, ${t("rezi.settings.current")}` : ""}`,
         dsVariant: selected ? "soft" : "ghost",
         dsSize: "sm",
         onPress: () => handlers.onSelectCategory(cat.id),
       });
     }),
-    ui.spacer({ size: 1 }),
-    ui.button({
-      id: "settings-close",
-      label: `${t("footer.close")} (Esc)`,
-      dsVariant: "ghost",
-      dsSize: "sm",
-      onPress: () => handlers.onClose(),
-    }),
   ]);
 
-  const form = ui.column({ gap: 1, flex: 1, px: 1 }, [
+  const form = ui.column({ gap: 1, flex: 1 }, [
     ui.text(categoryLabel(state.settingsCategory), {
-      style: { fg: col.primary, bold: true },
+      style: { fg: col.accent, bold: true },
     }),
+    ui.text(categoryHelp(state.settingsCategory), {
+      style: { fg: col.muted },
+      wrap: true,
+    }),
+    ui.spacer({ size: 1 }),
     ...renderSpeechModels(state, handlers),
     ...fields.map((field) => renderField(state, field, handlers, valueText)),
   ]);
 
-  const help = ui.column({ gap: 1, width: 28, px: 1 }, [
+  const help = ui.column({ gap: 1, flex: 1 }, [
     ui.text(t("rezi.settings.helpTitle"), {
       style: { fg: col.accent, bold: true },
     }),
-    ui.text(categoryHelp(state.settingsCategory), {
+    ui.text(t("rezi.settings.helpIntro"), {
       style: { fg: col.secondary },
       wrap: true,
     }),
+    ui.spacer({ size: 1 }),
+    ui.text(categoryLabel(state.settingsCategory), {
+      style: { fg: col.accent, bold: true },
+    }),
     state.settingsFocusKey
       ? ui.text(fieldHelp(state.settingsFocusKey), {
-          style: { fg: col.muted },
+          style: { fg: col.secondary },
           wrap: true,
         })
-      : ui.text(""),
+      : ui.text(categoryHelp(state.settingsCategory), {
+          style: { fg: col.secondary },
+          wrap: true,
+        }),
+    ui.spacer({ size: 1 }),
+    ui.text(`◆ ${t("rezi.settings.securityHint")}`, {
+      style: { fg: col.info },
+      wrap: true,
+    }),
   ]);
 
   const body = wide
-    ? ui.row({ gap: 2, flex: 1, p: 1 }, [nav, form, help])
-    : state.cols >= 72
-      ? ui.row({ gap: 1, flex: 1, p: 1 }, [nav, form])
-      : ui.column({ gap: 1, flex: 1, p: 1 }, [nav, form]);
+    ? ui.row({ gap: 0, flex: 1, px: 1 }, [
+        panel(nav, 28),
+        panel(form),
+        panel(help, 38),
+      ])
+    : medium
+      ? ui.row({ gap: 0, flex: 1, px: 1 }, [panel(nav, 24), panel(form)])
+      : ui.column({ gap: 0, flex: 1, px: 1 }, [
+          ui.box({ border: "single", borderStyle: { fg: col.border }, px: 1 }, [nav]),
+          ui.box({ border: "single", borderStyle: { fg: col.border }, p: 1, flex: 1 }, [form]),
+        ]);
 
   return ui.page({
-    header: ui.row({ px: 1 }, [
-      ui.text(t("tui.settingsTitle"), {
-        style: { fg: col.accent, bold: true },
-      }),
-    ]),
+    header: renderAppHeader(state, "settings"),
     body,
-    footer: ui.row({ px: 1 }, [
-      ui.text(t("settings.keys"), { style: { fg: col.muted } }),
-    ]),
+    footer: renderSettingsFooter(handlers.onClose, wide),
     gap: 0,
     p: 0,
   });
+}
+
+function panel(content: VNode, width?: number): VNode {
+  return ui.box({
+    border: "single",
+    borderStyle: { fg: col.border },
+    width,
+    flex: width ? undefined : 1,
+    p: 1,
+  }, [content]);
+}
+
+function renderSettingsFooter(onClose: () => void, wide: boolean): VNode {
+  const hints = [
+    `↑↓  ${t("rezi.settings.select")}`,
+    `Enter  ${t("rezi.settings.edit")}`,
+    `←→  ${t("rezi.settings.change")}`,
+  ];
+  if (!wide) hints.splice(2, 1);
+  return ui.row({ gap: 1, px: 1, py: 0 }, [
+    ...hints.map((label, index) => ui.box({
+      border: "single",
+      borderStyle: { fg: col.border },
+      flex: 1,
+      px: 1,
+    }, [ui.text(label, { style: { fg: index === 0 ? col.accent : col.secondary } })])),
+    ui.button({
+      id: "settings-close",
+      label: `Esc  ${t("footer.close")}`,
+      dsVariant: "ghost",
+      dsSize: "sm",
+      onPress: onClose,
+    }),
+  ]);
+}
+
+function categoryIcon(id: LiveUiState["settingsCategory"]): string {
+  if (id === "meeting") return "▣";
+  if (id === "speech") return "≋";
+  if (id === "ai") return "✧";
+  if (id === "recording") return "◎";
+  return "⚙";
 }
 
 function renderSpeechModels(
@@ -146,7 +197,7 @@ function renderField(
   const label = t(field.labelKey);
 
   if (editing) {
-    return ui.column({ gap: 0 }, [
+    return ui.box({ border: "single", borderStyle: { fg: col.accent }, px: 1 }, [
       ui.text(label, { style: { fg: col.accent, bold: true } }),
       ui.input({
         id: `settings-edit-${field.key}`,
@@ -161,7 +212,8 @@ function renderField(
   const value = valueText(field.key);
   return ui.button({
     id: `settings-field-${field.key}`,
-    label: `${focused ? "› " : "  "}${label}  ${value}`,
+    label: `${focused ? "›" : " "} ${label}    ${value}${field.kind === "cycle" || field.kind === "action" ? "  ›" : ""}`,
+    accessibleLabel: `${label}: ${value}`,
     dsVariant: focused ? "soft" : "ghost",
     dsSize: "sm",
     onPress: () => {

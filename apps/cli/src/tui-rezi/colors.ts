@@ -11,4 +11,9 @@ export const col = {
   error: rgb(248, 113, 113),
   info: rgb(94, 234, 212),
   selectedBg: rgb(39, 32, 58),
+  panelBg: rgb(13, 13, 17),
+  elevatedBg: rgb(20, 20, 25),
+  border: rgb(63, 63, 70),
+  borderSoft: rgb(39, 39, 42),
+  blue: rgb(96, 165, 250),
 } as const;

@@ -84,4 +84,14 @@ jobs:
       # Publish only the apps/cli baribari package (not docs or workspace root).
       - name: Publish to npm
         working-directory: apps/cli
-        run: npm publish --access public --ignore-scripts
+        shell: bash
+        run: |
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [[ "$PKG_VERSION" == *-* ]]; then
+            PREID="${PKG_VERSION#*-}"
+            PREID="${PREID%%.*}"
+            echo "Publishing prerelease with npm dist-tag: $PREID"
+            npm publish --access public --ignore-scripts --tag "$PREID"
+          else
+            npm publish --access public --ignore-scripts
+          fi

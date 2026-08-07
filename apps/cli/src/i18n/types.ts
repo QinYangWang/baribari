@@ -130,8 +130,25 @@ export type MessageTree = {
     brand: string;
     live: {
       meetingName: string;
+      editMeetingName: string;
       untitled: string;
       returnLive: string;
+      speakersShort: string;
+      named: string;
+      aiTranslation: string;
+      translated: string;
+      translating: string;
+      resume: string;
+      backgroundDownload: string;
+      foregroundDownload: string;
+    };
+    status: {
+      audio: string;
+      recognition: string;
+      enabled: string;
+      idle: string;
+      lan: string;
+      services: string;
     };
     inspector: {
       meeting: string;
@@ -169,10 +186,17 @@ export type MessageTree = {
       current: string;
       installed: string;
       notInstalled: string;
+      helpIntro: string;
+      securityHint: string;
+      select: string;
+      edit: string;
+      change: string;
     };
     confirm: {
       clearBody: string;
       quitBody: string;
+      modelMissing: string;
+      modelOptional: string;
     };
   };
   tui: {

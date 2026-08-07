@@ -2,6 +2,7 @@
  * Unit tests for Rezi TUI pure logic (no real terminal).
  */
 import assert from "node:assert/strict";
+import { createTestRenderer, ui } from "@rezi-ui/core";
 import {
   createInitialState,
   decideLayout,
@@ -14,6 +15,11 @@ import {
 } from "../src/tui-rezi/index.js";
 import type { ConfigSnapshot, LiveUiState } from "../src/tui-rezi/types.js";
 import { moveFocusInKeys } from "../src/tui-rezi/reducer.js";
+import { renderLiveScreen } from "../src/tui-rezi/components/live-screen.js";
+import { renderSettingsScreen, formatSettingValue } from "../src/tui-rezi/components/settings-screen.js";
+import { renderConfirmModal } from "../src/tui-rezi/components/confirm-modal.js";
+import { renderTranscriptRow } from "../src/tui-rezi/components/transcript.js";
+import { baribariTheme } from "../src/tui-rezi/theme.js";
 
 function baseConfig(over: Partial<ConfigSnapshot> = {}): ConfigSnapshot {
   return {
@@ -239,6 +245,23 @@ function testKeyMapping() {
       (a) => a.type === "SHOW_CONFIRM" && a.confirm.kind === "quit",
     ),
   );
+
+  s = fresh({
+    confirm: {
+      id: "model",
+      kind: "model-download",
+      title: "Model",
+      body: "Missing",
+      confirmLabel: "Download",
+      cancelLabel: "Cancel",
+      backgroundLabel: "Background",
+    },
+  });
+  r = mapKey(s, "b");
+  assert.ok(r.actions.some((a) => a.type === "DISMISS_CONFIRM"));
+  assert.ok(r.effects.some((e) => e.type === "confirm-background"));
+  r = mapKey(s, "escape");
+  assert.ok(r.effects.some((e) => e.type === "confirm-cancelled"));
 }
 
 function testBackendSelect() {
@@ -268,6 +291,117 @@ function testSettingsFocusKeys() {
   assert.equal(moveFocusInKeys(keys, "b", -1), "a");
 }
 
+function testPrototypeStructureRenders() {
+  const state = fresh({
+    speakers: [{
+      id: "sp1",
+      displayName: "Speaker 1",
+      colorIndex: 0,
+      segmentCount: 1,
+      isActive: true,
+      manual: false,
+      spkIndex: 0,
+    }],
+    segments: [{
+      id: "seg1",
+      speakerId: "sp1",
+      startedAtMs: 0,
+      endedAtMs: 2000,
+      originalText: "Original sentence",
+      translatedText: "Translated sentence",
+      isFinal: true,
+      isActive: false,
+      wallMs: Date.now(),
+    }],
+    selectedSegmentId: "seg1",
+  });
+  const renderer = createTestRenderer({
+    viewport: { cols: 160, rows: 42 },
+    theme: baribariTheme,
+  });
+  const noop = () => {};
+  const live = renderer.render(renderLiveScreen(state, {
+    onSelectSegment: noop,
+    onSelectSpeaker: noop,
+    onAction: noop,
+    onMeetingNameInput: noop,
+    onMeetingNameSubmit: noop,
+    onMeetingNameCancel: noop,
+    onBeginMeetingNameEdit: noop,
+  }));
+  assert.ok(live.findById("live-header"));
+  assert.ok(live.findById("speaker-list"));
+  assert.ok(live.findById("transcript-list"));
+  assert.ok(live.findById("actions-bar"));
+  renderer.reset();
+  const transcriptRow = renderer.render(renderTranscriptRow(state, {
+    kind: "segment",
+    id: "seg1",
+    row: state.segments[0],
+  }, true));
+  assert.ok(transcriptRow.findText("Original sentence"));
+  assert.ok(transcriptRow.findText("Translated sentence"));
+
+  const settingsState = { ...state, screen: "settings" as const };
+  renderer.reset();
+  const settings = renderer.render(renderSettingsScreen(settingsState, {
+    onSelectCategory: noop,
+    onSelectField: noop,
+    onNudge: noop,
+    onActivate: noop,
+    onSelectAsrModel: noop,
+    onEditInput: noop,
+    onClose: noop,
+  }, (key) => formatSettingValue(settingsState, key)));
+  assert.ok(settings.findById("settings-header"));
+  assert.ok(settings.findById("settings-cat-meeting"));
+  assert.ok(settings.findById("settings-close"));
+
+  const narrowState = {
+    ...state,
+    cols: 80,
+    rows: 24,
+    layoutMode: "narrow" as const,
+  };
+  renderer.reset();
+  const narrow = renderer.render(renderLiveScreen(narrowState, {
+    onSelectSegment: noop,
+    onSelectSpeaker: noop,
+    onAction: noop,
+    onMeetingNameInput: noop,
+    onMeetingNameSubmit: noop,
+    onMeetingNameCancel: noop,
+    onBeginMeetingNameEdit: noop,
+  }), { viewport: { cols: 80, rows: 24 } });
+  assert.ok(narrow.findById("transcript-list"));
+  assert.equal(narrow.findById("speaker-list"), null);
+
+  renderer.reset();
+  const modal = renderer.render(ui.layers([
+    renderLiveScreen(state, {
+      onSelectSegment: noop,
+      onSelectSpeaker: noop,
+      onAction: noop,
+      onMeetingNameInput: noop,
+      onMeetingNameSubmit: noop,
+      onMeetingNameCancel: noop,
+      onBeginMeetingNameEdit: noop,
+    }),
+    renderConfirmModal({
+      id: "model",
+      kind: "model-download",
+      title: "Install model",
+      body: "Model name · 111 MB",
+      confirmLabel: "Download now",
+      cancelLabel: "Cancel",
+      backgroundLabel: "Background download",
+    }, noop),
+  ]), { mode: "runtime" });
+  assert.ok(modal.findById("confirm-yes"));
+  assert.ok(modal.findById("confirm-bg"));
+  assert.ok(modal.findById("confirm-no"));
+}
+
 function main() {
   testLayout();
   testFollowLive();
@@ -276,6 +410,7 @@ function main() {
   testKeyMapping();
   testBackendSelect();
   testSettingsFocusKeys();
+  testPrototypeStructureRenders();
   console.log("test-tui-rezi: ok");
 }
 

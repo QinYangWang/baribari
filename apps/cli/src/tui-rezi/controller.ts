@@ -47,6 +47,7 @@ import {
   renderSettingsScreen,
 } from "./components/settings-screen.js";
 import { renderSpeakerList } from "./components/speakers.js";
+import { renderConfirmModal } from "./components/confirm-modal.js";
 import { mapKey, normalizeKeyName } from "./keys.js";
 import { layoutModeFor } from "./layout.js";
 import {
@@ -780,52 +781,16 @@ export async function createReziTui(
   }
 
   function view(s: LiveUiState): VNode {
-    if (s.confirm) {
-      return ui.page({
-        body: ui.center(
-          ui.box(
-            {
-              border: "rounded",
-              p: 2,
-              width: Math.min(60, Math.max(30, s.cols - 4)),
-            },
-            [
-              ui.text(s.confirm.title, {
-                style: { fg: col.warning, bold: true },
-              }),
-              ui.text(s.confirm.body, {
-                style: { fg: col.secondary },
-                wrap: true,
-              }),
-              ui.row({ gap: 2 }, [
-                ui.button({
-                  id: "confirm-yes",
-                  label: s.confirm.confirmLabel,
-                  dsVariant: "solid",
-                  onPress: () =>
-                    applyKey("enter"),
-                }),
-                ui.button({
-                  id: "confirm-no",
-                  label: s.confirm.cancelLabel,
-                  dsVariant: "ghost",
-                  onPress: () => applyKey("escape"),
-                }),
-                s.confirm.backgroundLabel
-                  ? ui.button({
-                      id: "confirm-bg",
-                      label: s.confirm.backgroundLabel,
-                      dsVariant: "soft",
-                      onPress: () => applyKey("b"),
-                    })
-                  : ui.text(""),
-              ]),
-            ],
-          ),
-        ),
-      });
-    }
+    const base = renderScreen(s);
+    if (!s.confirm) return base;
+    return ui.layers([base, renderConfirmModal(s.confirm, (choice) => {
+      if (choice === "accept") applyKey("enter");
+      else if (choice === "background") applyKey("b");
+      else applyKey("escape");
+    })]);
+  }
 
+  function renderScreen(s: LiveUiState): VNode {
     if (s.screen === "settings") {
       return renderSettingsScreen(
         s,

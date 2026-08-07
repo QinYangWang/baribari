@@ -1,6 +1,7 @@
 import { ui, type VNode } from "@rezi-ui/core";
 import { t } from "../../i18n/index.js";
 import type { LiveUiState } from "../types.js";
+import { col } from "../colors.js";
 
 export type ActionId =
   | "pause"
@@ -25,7 +26,7 @@ export function renderActionsBar(
   const btns: VNode[] = [
     ui.button({
       id: "act-pause",
-      label: `${paused ? "▶" : "❚❚"} ${t("footer.pause")} (p)`,
+      label: `${paused ? "▶" : "❚❚"}  ${paused ? t("rezi.live.resume") : t("footer.pause")}  [P]`,
       dsVariant: paused ? "solid" : "soft",
       dsTone: paused ? "warning" : "default",
       dsSize: "sm",
@@ -33,14 +34,14 @@ export function renderActionsBar(
     }),
     ui.button({
       id: "act-settings",
-      label: `${t("footer.settings")} (s)`,
+      label: `⚙  ${t("footer.settings")}  [S]`,
       dsVariant: "soft",
       dsSize: "sm",
       onPress: () => onAction("settings"),
     }),
     ui.button({
       id: "act-share",
-      label: `${t("footer.share")} (h)`,
+      label: `⌯  ${t("footer.share")}  [H]`,
       dsVariant: state.config.shareEnabled ? "solid" : "soft",
       dsTone: state.config.shareEnabled ? "success" : "default",
       dsSize: "sm",
@@ -48,7 +49,7 @@ export function renderActionsBar(
     }),
     ui.button({
       id: "act-record",
-      label: `${t("footer.record")} (r)`,
+      label: `◎  ${t("footer.record")}  [R]`,
       dsVariant: state.config.recording ? "solid" : "soft",
       dsTone: state.config.recording ? "danger" : "default",
       dsSize: "sm",
@@ -56,7 +57,7 @@ export function renderActionsBar(
     }),
     ui.button({
       id: "act-clear",
-      label: `${t("footer.clear")} (c)`,
+      label: `⌁  ${t("footer.clear")}  [C]`,
       dsVariant: "ghost",
       dsSize: "sm",
       onPress: () => onAction("clear"),
@@ -67,7 +68,7 @@ export function renderActionsBar(
     btns.push(
       ui.button({
         id: "act-speakers",
-        label: `${t("tui.speakersTitle")} (m)`,
+        label: `♙  ${t("tui.speakersTitle")}  [M]`,
         dsVariant: "soft",
         dsSize: "sm",
         onPress: () => onAction("speakers"),
@@ -91,7 +92,7 @@ export function renderActionsBar(
   btns.push(
     ui.button({
       id: "act-quit",
-      label: `${t("footer.quit")} (q)`,
+      label: `↪  ${t("footer.quit")}  [Q]`,
       dsVariant: "ghost",
       dsTone: "danger",
       dsSize: "sm",
@@ -105,5 +106,6 @@ export function renderActionsBar(
     px: 1,
     py: 0,
     wrap: true,
+    style: { bg: col.panelBg },
   }, btns);
 }

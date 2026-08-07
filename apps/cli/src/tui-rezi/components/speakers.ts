@@ -10,33 +10,32 @@ export function renderSpeakerList(
   compact = false,
 ): VNode {
   const items = state.speakers;
-  return ui.column({ gap: 0, width: compact ? 22 : 28 }, [
-    ui.text(t("tui.speakersTitle"), {
+  return ui.column({ gap: 0, flex: 1, width: compact ? undefined : 28 }, [
+    ui.text(`${t("rezi.live.speakersShort")} · ${items.length}`, {
       style: { fg: col.accent, bold: true },
     }),
-    ui.text(t("tui.people", { n: items.length }), {
-      style: { fg: col.muted },
-    }),
+    ui.spacer({ size: 1 }),
     items.length === 0
       ? ui.column({ gap: 0 }, [ui.spacer({ size: 1 }), ui.text(t("tui.noSpeakers"), { style: { fg: col.muted } })])
       : ui.virtualList<SpeakerView>({
           id: "speaker-list",
           items,
-          itemHeight: 2,
+          itemHeight: 3,
           accessibleLabel: t("tui.speakersTitle"),
           onSelect: (sp) => onSelect(sp.id),
           renderItem: (sp, _i, focused) => {
             const selected =
               focused || state.selectedSpeakerId === sp.id;
-            const marker = selected ? "› " : sp.isActive ? "● " : "  ";
+            const marker = sp.isActive ? "●" : "○";
             return ui.box(
               {
-                border: "none",
+                border: selected ? "single" : "none",
+                borderStyle: { fg: selected ? col.accent : col.borderSoft },
                 style: selected ? { bg: col.selectedBg } : undefined,
-                px: 0,
+                px: 1,
               },
               [
-                ui.text(`${marker}${sp.displayName}`, {
+                ui.text(`${marker}  ${sp.displayName}`, {
                   style: {
                     fg: speakerRgb(sp.colorIndex),
                     bold: sp.isActive || selected,
@@ -44,7 +43,7 @@ export function renderSpeakerList(
                   textOverflow: "ellipsis",
                 }),
                 ui.text(
-                  t("tui.segs", { n: sp.segmentCount }),
+                  `${t("tui.segs", { n: sp.segmentCount })}${sp.manual ? ` · ${t("rezi.live.named")}` : ""}`,
                   { style: { fg: col.muted } },
                 ),
               ],

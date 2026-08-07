@@ -58,18 +58,21 @@ export function renderTranscriptRow(
   if (item.kind === "partial" && item.partial) {
     const p = item.partial;
     const selected = focused || state.selectedSegmentId === item.id;
-    const marker = selected ? "› " : "  ";
     return ui.box(
       {
-        border: "none",
+        border: "single",
+        borderStyle: { fg: selected ? col.accent : col.border },
         style: selected ? { bg: col.selectedBg } : undefined,
         px: 1,
+        py: 0,
+        mb: 1,
       },
       [
         ui.text(
-          `${marker}${t("tui.liveLine")} · ${fmtClock(p.wallMs)}`,
-          { style: { fg: col.info, bold: true } },
+          `◉ ${t("tui.liveLine")}   ${fmtClock(p.wallMs)}   ${t("tui.recognizing")}`,
+          { style: { fg: col.accent, bold: true } },
         ),
+        ui.text(t("rezi.inspector.original"), { style: { fg: col.accent } }),
         ui.text(p.text, { style: { fg: col.secondary }, wrap: true }),
       ],
     );
@@ -82,19 +85,28 @@ export function renderTranscriptRow(
     (state.followLive &&
       state.segments[state.segments.length - 1]?.id === row.id &&
       !state.selectedSegmentId);
-  const marker = selected ? "› " : row.isActive ? "● " : "  ";
+  const marker = row.isActive ? "●" : "○";
   const name = speakerLabel(state, row.speakerId);
   const color = speakerRgb(speakerColorIndex(state, row.speakerId));
   const time = `${fmtClock(row.wallMs)} ${fmtRange(row.startedAtMs, row.endedAtMs)}`;
-  const pending = row.pending ? ` …` : row.isDraft ? ` ~` : "";
+  const stateLabel = row.pending
+    ? t("status.aiProcessing")
+    : row.isDraft
+      ? t("rezi.inspector.draft")
+      : t("rezi.inspector.final");
 
   const children: VNode[] = [
-    ui.row({ gap: 1 }, [
-      ui.text(`${marker}${name}`, {
+    ui.row({ gap: 1, justify: "between" }, [
+      ui.text(`${marker}  ${name}`, {
         style: { fg: color, bold: true },
       }),
-      ui.text(time + pending, { style: { fg: col.muted } }),
+      ui.text(`${time}   ${row.isFinal ? "✓" : "◌"} ${stateLabel}`, {
+        style: { fg: row.isFinal ? col.success : col.accent },
+      }),
     ]),
+    ui.text(t("rezi.inspector.original"), {
+      style: { fg: col.accent },
+    }),
     ui.text(row.originalText || "—", {
       style: { fg: col.primary },
       wrap: true,
@@ -102,16 +114,26 @@ export function renderTranscriptRow(
   ];
   if (row.translatedText) {
     children.push(
-      ui.text(row.translatedText, {
+      ui.text(t("rezi.live.aiTranslation"), {
         style: { fg: col.success },
-        wrap: true,
       }),
+      ui.text(row.translatedText, { style: { fg: col.primary }, wrap: true }),
+      ui.text(`✓ ${t("rezi.live.translated")}`, {
+        style: { fg: col.success },
+      }),
+    );
+  } else if (row.pending) {
+    children.push(
+      ui.text(t("rezi.live.aiTranslation"), { style: { fg: col.success } }),
+      ui.text(t("rezi.live.translating"), { style: { fg: col.accent } }),
+      ui.text(`⋯ ${t("status.aiProcessing")}`, { style: { fg: col.muted } }),
     );
   }
 
   return ui.box(
     {
-      border: "none",
+      border: "single",
+      borderStyle: { fg: selected ? col.accent : col.border },
       style: selected ? { bg: col.selectedBg } : undefined,
       px: 1,
       py: 0,
@@ -156,7 +178,8 @@ export function renderTranscriptList(
         if (item.kind === "empty") return 3;
         if (item.kind === "partial") return 3;
         const row = item.row!;
-        return row.translatedText ? 5 : 4;
+        if (row.translatedText || row.pending) return 8;
+        return 5;
       },
       ensureVisibleIndex: ensureIdx >= 0 ? ensureIdx : undefined,
       ensureVisibleMode: state.followLive ? "sticky" : "always",
