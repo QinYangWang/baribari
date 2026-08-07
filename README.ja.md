@@ -48,6 +48,8 @@ baribari
 
 初回セットアップで UI 言語、ASR モデル、話者モデルを選びます。あとは会議音声が取れる場所で `baribari` を実行します。
 
+既定のライブ TUI は **legacy** です。`baribari --tui-backend rezi` または `BARIBARI_TUI=rezi` でモジュール化された Rezi 新UIを試せます（起動失敗時は legacy にフォールバック）。
+
 ```bash
 baribari demo     # 内蔵サンプル会議
 baribari doctor   # 音声とモデルの診断

@@ -41,3 +41,7 @@ allowBuilds:
   # Copies a service-worker file only when package.json.msw.workerDirectory is set.
   # Docs do not use MSW workers; deny install-time execution.
   msw: false
+  # node-pty is a transitive dep of @rezi-ui/node used only by its testing/ptyHarness
+  # helpers. Runtime createNodeApp loads prebuilt @rezi-ui/native .node binaries and
+  # does not import node-pty. Deny install/postinstall (node-gyp rebuild) scripts.
+  node-pty@1.1.0: false

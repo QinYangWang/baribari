@@ -17,6 +17,16 @@ growthStage: "evergreen"
 
 ![表示言語、音声認識、AI、録音を変更する設定パネル](/baribari/screenshots/settings.png)
 
+## TUI バックエンド
+
+| バックエンド | 有効化 | 説明 |
+|--------------|--------|------|
+| **legacy**（既定） | `baribari` または `--tui-backend legacy` | 従来の自前レンダラ（現状フル機能） |
+| **rezi**（任意） | `baribari --tui-backend rezi` または `BARIBARI_TUI=rezi` | Rezi モジュール化 UI。起動失敗時は legacy にフォールバック |
+
+CLI が環境変数より優先。legacy と対等になるまで Rezi は opt-in です。
+
+
 ## Live vs final
 
 | | UI | 保存 | 共有 | AI |

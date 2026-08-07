@@ -11,6 +11,12 @@ importers:
 
   .:
     dependencies:
+      '@rezi-ui/core':
+        specifier: 0.1.0-beta.2
+        version: 0.1.0-beta.2
+      '@rezi-ui/node':
+        specifier: 0.1.0-beta.2
+        version: 0.1.0-beta.2
       bionic-audio:
         specifier: 1.1.1
         version: 1.1.1
@@ -980,6 +986,18 @@ packages:
   '@polka/url@1.0.0-next.29':
     resolution: {integrity: sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww==}
 
+  '@rezi-ui/core@0.1.0-beta.2':
+    resolution: {integrity: sha512-XWr4Qf1fp02rAEYZQDYS4FEK3UH4pSsC7c5xDJa7KrS7rHJNyvbLKf14iNRPAhTgWK95RRJcMSBb0PlfImL6XQ==}
+    engines: {bun: '>=1.3.0', node: '>=18'}
+
+  '@rezi-ui/native@0.1.0-beta.2':
+    resolution: {integrity: sha512-kvxYDIa/Ai1a1fRzoQZEgDdHFMc7/jojWhYxALFnmAfREIQyxr8ViBhgPpHO91ZIizLh2KTbV6KMg079I9ItTQ==}
+    engines: {bun: '>=1.3.0', node: '>=18'}
+
+  '@rezi-ui/node@0.1.0-beta.2':
+    resolution: {integrity: sha512-0Jz3M+gJgeg48C8bAR6kLroBYMjdelxU6BAStKN2t3s4saq4JSaaCh1OxZFZUeNTaD9hfapFqx4p4Uc9vQ85TA==}
+    engines: {bun: '>=1.3.0', node: '>=18'}
+
   '@rolldown/binding-android-arm64@1.2.2':
     resolution: {integrity: sha512-l7x215OGvo1s52JWmR8U/DAVzEDWBCIbTm28aeJV/WDTSHgcKXaZTuBT0hJMs5NggilfJTW3clZVvd24yfKJxA==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -1328,6 +1346,9 @@ packages:
 
   '@vscode/l10n@0.0.18':
     resolution: {integrity: sha512-KYSIHVmslkaCDyw013pphY+d7x1qV8IZupYfeIfzNA+nsaWHbn5uPuQRvdRFsa9zFzGeudPuoGoZ1Op4jrJXIQ==}
+
+  '@xterm/headless@6.0.0':
+    resolution: {integrity: sha512-5Yj1QINYCyzrZtf8OFIHi47iQtI+0qYFPHmouEfG8dHNxbZ9Tb9YGSuLcsEwj9Z+OL75GJqPyJbyoFer80a2Hw==}
 
   accepts@2.0.0:
     resolution: {integrity: sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==}
@@ -2942,6 +2963,9 @@ packages:
   nlcst-to-string@4.0.0:
     resolution: {integrity: sha512-YKLBCcUYKAg0FNlOBT6aI91qFmSiFKiluk655WzPF+DDMA02qIyy8uiRqI8QXtcFpEvll12LpL5MXqEmAZ+dcA==}
 
+  node-addon-api@7.1.1:
+    resolution: {integrity: sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ==}
+
   node-cpal@0.1.1:
     resolution: {integrity: sha512-ENjac9jLGqp6hb+zn2ioPEhKCN+ctDlP4omP52cNukFrerD2olXUQjfLFoRXeZRVuBrT44chDgcPEpnckQmUVw==}
     engines: {node: '>=14.0.0'}
@@ -2969,6 +2993,9 @@ packages:
 
   node-mock-http@1.0.5:
     resolution: {integrity: sha512-KQyt/wLjG3TAc7DOUhpqWzgd4ERxR80JOlTK5VE5R1S12IaPVN5qkj4klBce9HPG1Njuup4Sb5bljaT34lIyjw==}
+
+  node-pty@1.1.0:
+    resolution: {integrity: sha512-20JqtutY6JPXTUnL0ij1uad7Qe1baT46lyolh2sSENDd4sTzKZ4nmAFkeAARDKwmlLjPx6XKRlwRUxwjOy+lUg==}
 
   node-releases@2.0.51:
     resolution: {integrity: sha512-wRNIrw4DmVLKQlbgOMdkMx27Wrpzes2hh5Jtbi2bjPd+4wJstWIqP5A+lscnqbm0xxmT5Bpg8Lec5ItEBwx6BQ==}
@@ -5022,6 +5049,17 @@ snapshots:
 
   '@polka/url@1.0.0-next.29': {}
 
+  '@rezi-ui/core@0.1.0-beta.2': {}
+
+  '@rezi-ui/native@0.1.0-beta.2': {}
+
+  '@rezi-ui/node@0.1.0-beta.2':
+    dependencies:
+      '@rezi-ui/core': 0.1.0-beta.2
+      '@rezi-ui/native': 0.1.0-beta.2
+      '@xterm/headless': 6.0.0
+      node-pty: 1.1.0
+
   '@rolldown/binding-android-arm64@1.2.2':
     optional: true
 
@@ -5321,6 +5359,8 @@ snapshots:
       vscode-uri: 3.1.0
 
   '@vscode/l10n@0.0.18': {}
+
+  '@xterm/headless@6.0.0': {}
 
   accepts@2.0.0:
     dependencies:
@@ -7339,6 +7379,8 @@ snapshots:
     dependencies:
       '@types/nlcst': 2.0.3
 
+  node-addon-api@7.1.1: {}
+
   node-cpal@0.1.1: {}
 
   node-domexception@1.0.0: {}
@@ -7367,6 +7409,10 @@ snapshots:
       entities: 8.0.0
 
   node-mock-http@1.0.5: {}
+
+  node-pty@1.1.0:
+    dependencies:
+      node-addon-api: 7.1.1
 
   node-releases@2.0.51: {}
 

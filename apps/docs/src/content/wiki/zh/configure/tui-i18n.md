@@ -19,6 +19,16 @@ growthStage: "evergreen"
 
 ![设置面板，可调整界面语言、语音识别、AI 和音频选项](/baribari/screenshots/settings.png)
 
+## TUI 后端
+
+| 后端 | 启用方式 | 说明 |
+|------|----------|------|
+| **legacy**（默认） | `baribari` 或 `--tui-backend legacy` | 原自定义渲染；当前功能完整 |
+| **rezi**（可选） | `baribari --tui-backend rezi` 或 `BARIBARI_TUI=rezi` | Rezi 模块化新设计；启动失败时回退 legacy |
+
+CLI 优先于环境变量。在与 legacy 完全对等前，Rezi 保持 opt-in。
+
+
 ## Live vs final
 
 | kind | UI | 落盘 | 共享 | AI |

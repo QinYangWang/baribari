@@ -48,6 +48,8 @@ baribari
 
 Pick UI language, ASR model, and speaker model during setup. Then run `baribari` wherever the meeting audio is available.
 
+The default live TUI is the **legacy** renderer. Opt into the modular Rezi redesign with `baribari --tui-backend rezi` or `BARIBARI_TUI=rezi` (falls back to legacy if Rezi cannot start).
+
 ```bash
 baribari demo     # built-in sample meeting
 baribari doctor   # diagnose audio and models

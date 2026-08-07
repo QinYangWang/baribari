@@ -34,7 +34,8 @@ import {
   postprocessSegment,
 } from "./postprocess.js";
 import { createEmitter, onStatus as plainStatus } from "./ui.js";
-import { createTui } from "./tui.js";
+import { createLiveTui } from "./tui-factory.js";
+
 import {
   defaultRecordDir,
   flushSaveSettings,
@@ -341,7 +342,7 @@ function printCompletion(shell: string): void {
 _${name}_completions() {
   local cur="\${COMP_WORDS[COMP_CWORD]}"
   local cmds="setup paths config devices doctor demo join session sessions resume completion help"
-  local opts="--lang --ui-lang --source --device --output --no-spk --spk-engine --spk-threshold --no-tui --record --record-dir --ai --no-ai --ai-translate --ai-base-url --ai-model --ai-key --share --no-share --share-port --join --vad-threshold --vad-min-speech --vad-min-silence --vad-max-speech --vad-window --list-devices --demo --help --version"
+  local opts="--lang --ui-lang --source --device --output --no-spk --spk-engine --spk-threshold --no-tui --tui-backend --record --record-dir --ai --no-ai --ai-translate --ai-base-url --ai-model --ai-key --share --no-share --share-port --join --vad-threshold --vad-min-speech --vad-min-silence --vad-max-speech --vad-window --list-devices --demo --help --version"
   if [[ \${COMP_CWORD} -eq 1 ]]; then
     COMPREPLY=( $(compgen -W "\${cmds} \${opts}" -- "\${cur}") )
   else
@@ -357,7 +358,7 @@ complete -F _${name}_completions ${name}
 _${name}() {
   local -a cmds opts
   cmds=(setup paths config devices doctor demo join session sessions resume completion help)
-  opts=(--lang --ui-lang --source --device --output --no-spk --spk-engine --spk-threshold --no-tui --record --record-dir --ai --no-ai --ai-translate --ai-base-url --ai-model --ai-key --share --no-share --share-port --join --vad-threshold --vad-min-speech --vad-min-silence --vad-max-speech --vad-window --list-devices --demo --help --version)
+  opts=(--lang --ui-lang --source --device --output --no-spk --spk-engine --spk-threshold --no-tui --tui-backend --record --record-dir --ai --no-ai --ai-translate --ai-base-url --ai-model --ai-key --share --no-share --share-port --join --vad-threshold --vad-min-speech --vad-min-silence --vad-max-speech --vad-window --list-devices --demo --help --version)
   _arguments \\
     '1:command:(\${cmds})' \\
     '*::options:->opts'
@@ -421,6 +422,7 @@ function addRunOptions(cmd: Command): Command {
     )
     .option("--spk-threshold <n>", t("cli.spkThreshold"), (v) => parseFloat(v))
     .option("--no-tui", t("cli.noTui"))
+    .option("--tui-backend <backend>", t("cli.tuiBackend"))
     .option("--record <path>", t("cli.record"))
     .option("--record-dir <dir>", t("cli.recordDir"))
     .option("--ai", t("cli.ai"))
@@ -701,6 +703,7 @@ type RunOpts = {
   spk: boolean;
   spkThreshold?: number;
   tui: boolean;
+  tuiBackend?: string;
   record?: string;
   recordDir?: string;
   ai?: boolean;
@@ -936,7 +939,7 @@ async function runMain(opts: RunOpts) {
   const stop = { value: false };
 
   if (useTui) {
-    await runTui(args, stop);
+    await runTui(args, stop, undefined, opts.tuiBackend);
   } else {
     await runPlain(args, stop);
   }
@@ -1147,6 +1150,7 @@ async function runTui(
   args: TranscribeArgs,
   stop: { value: boolean },
   existing?: SessionWriter,
+  tuiBackend?: string,
 ) {
   let forceTimer: ReturnType<typeof setTimeout> | null = null;
   let pipe: ReturnType<typeof createSegmentPipeline> | null = null;
@@ -1225,7 +1229,8 @@ async function runTui(
     speakerTracker = tr;
   };
 
-  const tui = createTui(args, {
+  const tui = await createLiveTui(args, {
+    backend: tuiBackend,
     onQuit: () => requestStop(false),
     sessionDir: session.dir,
     sessionId: session.id,
@@ -1352,11 +1357,12 @@ async function runTui(
   }
 
   let exitCode = 0;
+  let transcribeError: unknown;
   try {
     await transcribe(args, pipe.onAsr, stop, onStatus);
   } catch (e) {
     exitCode = 1;
-    console.error(e instanceof Error ? e.message : e);
+    transcribeError = e;
   }
   clearInterval(recordWatch);
   if (forceTimer) clearTimeout(forceTimer);
@@ -1373,8 +1379,16 @@ async function runTui(
   }
   try {
     tui.close();
+    await tui.waitClosed();
   } catch {
     /* ignore */
+  }
+  if (transcribeError != null) {
+    console.error(
+      transcribeError instanceof Error
+        ? transcribeError.message
+        : transcribeError,
+    );
   }
   try {
     const tag = session.continuing
@@ -1497,7 +1511,8 @@ async function runJoin(
       speakerTurn: { ...DEFAULT_SPEAKER_TURN, enabled: false },
       output: opts.output,
     };
-    const tui = createTui(args, {
+    const tui = await createLiveTui(args, {
+      backend: undefined,
       onQuit: () => {
         stop.value = true;
         join.close();

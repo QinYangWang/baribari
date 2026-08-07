@@ -48,6 +48,8 @@ baribari
 
 首次设置选择界面语言、识别模型和声纹模型。之后在能采集会议声音的设备上运行 `baribari`。
 
+默认实时界面为 **legacy**。可用 `baribari --tui-backend rezi` 或 `BARIBARI_TUI=rezi` 试用模块化 Rezi 新设计（启动失败时回退 legacy）。
+
 ```bash
 baribari demo     # 内置示例会议
 baribari doctor   # 检查音频与模型

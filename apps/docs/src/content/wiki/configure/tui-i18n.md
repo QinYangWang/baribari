@@ -7,9 +7,27 @@ tags: ["configure", "tui", "i18n"]
 isPinned: false
 growthStage: "evergreen"
 ---
-## Live layout
+## TUI backends
 
-The live interface is organized into three areas:
+baribari ships two live TUI implementations:
+
+| Backend | How to enable | Notes |
+|---------|---------------|--------|
+| **legacy** (default) | `baribari` or `--tui-backend legacy` | Original custom renderer; full feature parity today |
+| **rezi** (opt-in) | `baribari --tui-backend rezi` or `BARIBARI_TUI=rezi` | Modular Rezi redesign; falls back to legacy if startup fails |
+
+CLI wins over `BARIBARI_TUI`. Rezi remains opt-in until it matches legacy for speaker merge, full settings edge-cases, and resume TUI.
+
+Rezi live layout (approved redesign):
+
+1. **Header** — `◇ baribari` brand, editable meeting name (left); listening status + elapsed (right)
+2. **Wide** — speakers | transcript | inspector
+3. **Medium / narrow** — transcript first; speakers/inspector as panels
+4. **Actions** — focusable pause / settings / share / record / clear / quit
+
+## Live layout (legacy)
+
+The legacy live interface is organized into three areas:
 
 1. **Speakers** — roster + session speakers, rename, merge, assign  
 2. **Transcript** — final history + one **live** row at bottom  

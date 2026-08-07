@@ -125,6 +125,56 @@ export type MessageTree = {
     shareJoined: string;
     shareReconnecting: string;
   };
+  /** Rezi TUI redesign strings (live + categorized settings). */
+  rezi: {
+    brand: string;
+    live: {
+      meetingName: string;
+      untitled: string;
+      returnLive: string;
+    };
+    inspector: {
+      meeting: string;
+      segment: string;
+      speaker: string;
+      time: string;
+      range: string;
+      speakerName: string;
+      state: string;
+      original: string;
+      translation: string;
+      draft: string;
+      final: string;
+      listenState: string;
+    };
+    settings: {
+      cat: {
+        meeting: string;
+        meetingHelp: string;
+        speech: string;
+        speechHelp: string;
+        ai: string;
+        aiHelp: string;
+        recording: string;
+        recordingHelp: string;
+        advanced: string;
+        advancedHelp: string;
+      };
+      helpTitle: string;
+      sessionName: string;
+      sessionNameHelp: string;
+      advancedVad: string;
+      advancedVadHelp: string;
+      asrModels: string;
+      current: string;
+      installed: string;
+      notInstalled: string;
+    };
+    confirm: {
+      clearBody: string;
+      quitBody: string;
+    };
+  };
   tui: {
     brand: string;
     listening: string;
@@ -315,6 +365,8 @@ export type MessageTree = {
     invalidSpkEngine: string;
     spkThreshold: string;
     noTui: string;
+    /** TUI backend: rezi | legacy */
+    tuiBackend: string;
     record: string;
     recordDir: string;
     ai: string;
